@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns="http://javafx.com/javafx/21"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.dino.presentation.controllers.GameOverController"
+      alignment="CENTER"
+      spacing="24"
+      style="-fx-background-color: #1a1a2e; -fx-padding: 60;">
+
+    <Label text="FIN DE PARTIDA"
+           style="-fx-font-size: 52px; -fx-font-weight: bold; -fx-text-fill: white; -fx-font-family: 'Arial';"/>
+
+    <Label fx:id="winnerLabel" text="Ganador: —"
+           style="-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #e94560;"/>
+
+    <Label fx:id="totalTimeLabel" text="Duración: 60s"
+           style="-fx-font-size: 16px; -fx-text-fill: #aaaacc;"/>
+
+    <VBox spacing="8" maxWidth="600" style="-fx-padding: 10 0;">
+        <Label text="Resultados finales:" style="-fx-text-fill: #aaaacc; -fx-font-size: 13px;"/>
+        <TableView fx:id="resultsTable"
+                   prefHeight="280"
+                   style="-fx-background-color: #16213e; -fx-border-color: #333366; -fx-border-radius: 6;">
+            <columns>
+                <TableColumn fx:id="posColumn"   text="Posición" prefWidth="100"/>
+                <TableColumn fx:id="nameColumn"  text="Jugador"  prefWidth="250"/>
+                <TableColumn fx:id="scoreColumn" text="Puntaje"  prefWidth="120"/>
+            </columns>
+        </TableView>
+    </VBox>
+
+    <Button text="VOLVER AL MENÚ"
+            onAction="#onVolverAlMenu"
+            style="-fx-background-color: #e94560; -fx-text-fill: white; -fx-font-weight: bold;
+                   -fx-font-size: 15px; -fx-padding: 12 40; -fx-background-radius: 6; -fx-cursor: hand;"/>
+</VBox>

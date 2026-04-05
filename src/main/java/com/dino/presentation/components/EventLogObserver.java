@@ -13,17 +13,23 @@ public class EventLogObserver {
         eventBus.subscribe(EventNames.ITEM_COLLECTED, e -> {
             String player = (String) e.getOrDefault("playerId", "?");
             int pts = e.containsKey("points") ? ((Number) e.get("points")).intValue() : 0;
-            add("+" + pts + "  " + player + " recogió ítem");
+            add("+" + pts + " masa  " + player + " comio pellet");
         });
-        eventBus.subscribe(EventNames.PENALTY_APPLIED, e -> {
+        eventBus.subscribe(EventNames.PLAYER_CONSUMED, e -> {
+            String predator = (String) e.getOrDefault("playerId", "?");
+            String prey = (String) e.getOrDefault("targetId", "?");
+            int gained = e.containsKey("gainedMass") ? (int) Math.round(((Number) e.get("gainedMass")).doubleValue()) : 0;
+            add(predator + " devoro a " + prey + " +" + gained);
+        });
+        eventBus.subscribe(EventNames.VIRUS_TRIGGERED, e -> {
             String player = (String) e.getOrDefault("playerId", "?");
-            int pts = e.containsKey("points") ? ((Number) e.get("points")).intValue() : 0;
-            add(pts + "  " + player + " en zona penalización");
+            int lost = e.containsKey("lostMass") ? (int) Math.round(((Number) e.get("lostMass")).doubleValue()) : 0;
+            add("Virus golpea a " + player + " -" + lost);
         });
         eventBus.subscribe(EventNames.SCORE_UPDATED, e -> {
             String player = (String) e.getOrDefault("playerId", "?");
             int score = e.containsKey("score") ? ((Number) e.get("score")).intValue() : 0;
-            add(player + " → " + score + " pts");
+            add(player + " → " + score + " masa");
         });
     }
 

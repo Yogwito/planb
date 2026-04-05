@@ -5,18 +5,18 @@ public class PenaltyZone {
     private double x;
     private double y;
     private double radius;
-    private int points;
-    private double slowMultiplier;
+    private double triggerMass;
+    private double burstRatio;
 
     public PenaltyZone() {}
 
-    public PenaltyZone(String id, double x, double y, double radius, int points, double slowMultiplier) {
+    public PenaltyZone(String id, double x, double y, double radius, double triggerMass, double burstRatio) {
         this.id = id;
         this.x = x;
         this.y = y;
         this.radius = radius;
-        this.points = points;
-        this.slowMultiplier = slowMultiplier;
+        this.triggerMass = triggerMass;
+        this.burstRatio = burstRatio;
     }
 
     public String getId() { return id; }
@@ -27,8 +27,8 @@ public class PenaltyZone {
     public void setY(double y) { this.y = y; }
     public double getRadius() { return radius; }
     public void setRadius(double radius) { this.radius = radius; }
-    public int getPoints() { return points; }
-    public void setPoints(int points) { this.points = points; }
-    public double getSlowMultiplier() { return slowMultiplier; }
-    public void setSlowMultiplier(double slowMultiplier) { this.slowMultiplier = slowMultiplier; }
+    public double getTriggerMass() { return triggerMass; }
+    public void setTriggerMass(double triggerMass) { this.triggerMass = triggerMass; }
+    public double getBurstRatio() { return burstRatio; }
+    public void setBurstRatio(double burstRatio) { this.burstRatio = burstRatio; }
 }

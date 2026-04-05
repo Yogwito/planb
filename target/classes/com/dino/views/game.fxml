@@ -16,6 +16,10 @@
             <Label text="DINO ARENA"
                    style="-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: white;
                           -fx-font-family: 'Arial';"/>
+            <Label fx:id="massLabel" text="Masa: 0"
+                   style="-fx-text-fill: #ffd166; -fx-font-size: 16px; -fx-font-weight: bold;"/>
+            <Label fx:id="zoomLabel" text="Zoom: 1.0x"
+                   style="-fx-text-fill: #8be9fd; -fx-font-size: 14px;"/>
             <Region HBox.hgrow="ALWAYS"/>
             <Label text="TIEMPO:" style="-fx-text-fill: #aaaacc; -fx-font-size: 16px;"/>
             <Label fx:id="timerLabel" text="60"
@@ -27,6 +31,13 @@
     <center>
         <StackPane>
             <Canvas fx:id="arenaCanvas" width="900" height="620"/>
+            <VBox alignment="TOP_CENTER" mouseTransparent="true" pickOnBounds="false"
+                  spacing="8" StackPane.alignment="TOP_CENTER" style="-fx-padding: 16 0 0 0;">
+                <Label fx:id="feedbackLabel" text=""
+                       style="-fx-text-fill: white; -fx-font-size: 20px; -fx-font-weight: bold;
+                              -fx-background-color: rgba(13,13,26,0.65); -fx-padding: 8 14;
+                              -fx-background-radius: 16;"/>
+            </VBox>
         </StackPane>
     </center>
 

@@ -10,7 +10,8 @@ public class SoundManager {
     public SoundManager(EventBus eventBus) {
         eventBus.subscribe(EventNames.GAME_STARTED,    e -> playTone(440, 300));
         eventBus.subscribe(EventNames.ITEM_COLLECTED,  e -> playTone(660, 150));
-        eventBus.subscribe(EventNames.PENALTY_APPLIED, e -> playTone(220, 400));
+        eventBus.subscribe(EventNames.VIRUS_TRIGGERED, e -> playTone(220, 400));
+        eventBus.subscribe(EventNames.PLAYER_CONSUMED, e -> playTone(520, 200));
         eventBus.subscribe(EventNames.GAME_OVER,       e -> playTone(330, 800));
     }
 

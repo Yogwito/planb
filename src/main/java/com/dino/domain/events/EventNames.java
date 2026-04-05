@@ -6,6 +6,8 @@ public interface EventNames {
     String GAME_STARTED        = "GAME_STARTED";
     String ITEM_COLLECTED      = "ITEM_COLLECTED";
     String PENALTY_APPLIED     = "PENALTY_APPLIED";
+    String PLAYER_CONSUMED     = "PLAYER_CONSUMED";
+    String VIRUS_TRIGGERED     = "VIRUS_TRIGGERED";
     String SCORE_UPDATED       = "SCORE_UPDATED";
     String GAME_OVER           = "GAME_OVER";
     String PLAYER_DISCONNECTED = "PLAYER_DISCONNECTED";

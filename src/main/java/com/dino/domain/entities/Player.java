@@ -6,9 +6,9 @@ public class Player {
     private String color;
     private double x;
     private double y;
-    private int score;
+    private double mass;
     private boolean connected;
-    private double penaltyUntil;
+    private boolean ready;
 
     public Player() {}
 
@@ -16,20 +16,25 @@ public class Player {
         this.id = id;
         this.name = name;
         this.color = color;
+        this.mass = 28.0;
         this.connected = true;
+        this.ready = false;
     }
 
-    public void applyPenalty(double duration, int points, double now) {
-        this.penaltyUntil = now + duration;
-        this.score += points;
+    public void addMass(double delta) {
+        setMass(this.mass + delta);
     }
 
-    public boolean isPenalized(double now) {
-        return now < penaltyUntil;
+    public void setMass(double mass) {
+        this.mass = Math.max(0, mass);
     }
 
-    public double effectiveSpeed(double baseSpeed, double now) {
-        return isPenalized(now) ? baseSpeed * 0.4 : baseSpeed;
+    public double getMass() {
+        return mass;
+    }
+
+    public double getRadius(double radiusScale) {
+        return Math.max(10.0, Math.sqrt(Math.max(1.0, mass)) * radiusScale);
     }
 
     public String getId() { return id; }
@@ -42,10 +47,10 @@ public class Player {
     public void setX(double x) { this.x = x; }
     public double getY() { return y; }
     public void setY(double y) { this.y = y; }
-    public int getScore() { return score; }
-    public void setScore(int score) { this.score = score; }
+    public int getScore() { return (int) Math.round(this.mass); }
+    public void setScore(int score) { setMass(score); }
     public boolean isConnected() { return connected; }
     public void setConnected(boolean connected) { this.connected = connected; }
-    public double getPenaltyUntil() { return penaltyUntil; }
-    public void setPenaltyUntil(double penaltyUntil) { this.penaltyUntil = penaltyUntil; }
+    public boolean isReady() { return ready; }
+    public void setReady(boolean ready) { this.ready = ready; }
 }

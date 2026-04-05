@@ -15,7 +15,9 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URL;
+import java.util.List;
 import java.util.Map;
 import java.util.ResourceBundle;
 import java.util.Timer;
@@ -28,6 +30,7 @@ public class LobbyController implements Initializable {
 
     private final MessageSerializer serializer = new MessageSerializer();
     private Timer networkTimer;
+    private long lastLobbyBroadcastAt = 0;
 
     @Override
     public void initialize(URL url, ResourceBundle rb) {
@@ -39,14 +42,15 @@ public class LobbyController implements Initializable {
 
         refreshPlayerList();
 
-        if (!MainApp.sessionService.isHost()) startNetworkLoop();
+        startNetworkLoop();
     }
 
     private void refreshPlayerList() {
         Platform.runLater(() -> {
             playersList.getItems().clear();
-            for (Player p : MainApp.sessionService.getPlayers().values()) {
-                playersList.getItems().add(p.getName() + (p.isConnected() ? " ✓" : " ..."));
+            for (Player p : MainApp.sessionService.getPlayersSnapshot()) {
+                String state = p.isReady() ? " listo" : (p.isConnected() ? " conectado" : " desconectado");
+                playersList.getItems().add(p.getName() + " [" + state + "]");
             }
         });
     }
@@ -54,6 +58,9 @@ public class LobbyController implements Initializable {
     @FXML
     public void onListo() {
         if (MainApp.sessionService.isHost()) {
+            MainApp.sessionService.markPlayerReady(MainApp.sessionService.getLocalPlayerId(), true);
+            MainApp.eventBus.publish(EventNames.PLAYER_READY, Map.of("playerId", MainApp.sessionService.getLocalPlayerId()));
+            broadcastLobbySnapshot();
             statusLabel.setText("Host listo. Esperando más jugadores...");
         } else {
             try {
@@ -76,11 +83,12 @@ public class LobbyController implements Initializable {
             HostMatchService hostMatchService = new HostMatchService(MainApp.sessionService, MainApp.eventBus);
             MainApp.hostMatchService = hostMatchService;
             hostMatchService.initWorld();
+            Map<String, Object> startMessage = MainApp.sessionService.getSnapshotData();
+            startMessage.put("type", MessageSerializer.START_GAME);
+            MainApp.udpPeer.broadcast(startMessage, MainApp.sessionService.getRemotePeerAddresses());
             MainApp.eventBus.publish(EventNames.GAME_STARTED, Map.of());
             if (networkTimer != null) networkTimer.cancel();
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dino/views/game.fxml"));
-            Scene scene = new Scene(loader.load(), 1280, 780);
-            MainApp.getStage().setScene(scene);
+            openGameScene();
         } catch (Exception e) {
             statusLabel.setText("Error: " + e.getMessage());
         }
@@ -92,27 +100,93 @@ public class LobbyController implements Initializable {
             @Override
             public void run() {
                 if (MainApp.udpPeer == null || !MainApp.udpPeer.isBound()) return;
+                if (MainApp.sessionService.isHost()) broadcastLobbySnapshotIfDue();
                 var received = MainApp.udpPeer.receive();
-                received.ifPresent(entry -> {
-                    Map<String, Object> msg = entry.getKey();
-                    String type = (String) msg.get("type");
-                    if (MessageSerializer.START_GAME.equals(type)) {
-                        Platform.runLater(() -> {
-                            try {
-                                if (networkTimer != null) networkTimer.cancel();
-                                MainApp.eventBus.publish(EventNames.GAME_STARTED, Map.of());
-                                FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dino/views/game.fxml"));
-                                Scene scene = new Scene(loader.load(), 1280, 780);
-                                MainApp.getStage().setScene(scene);
-                            } catch (Exception e) {
-                                statusLabel.setText("Error: " + e.getMessage());
-                            }
-                        });
-                    } else if (MessageSerializer.LOBBY_SNAPSHOT.equals(type)) {
-                        MainApp.sessionService.updateFromSnapshot(msg);
-                    }
-                });
+                received.ifPresent(entry -> handleMessage(entry.getKey(), entry.getValue()));
             }
         }, 0, 100);
+    }
+
+    private void handleMessage(Map<String, Object> msg, InetSocketAddress sender) {
+        String type = (String) msg.get("type");
+        if (type == null) return;
+
+        if (MainApp.sessionService.isHost()) {
+            handleHostMessage(type, msg, sender);
+            return;
+        }
+
+        if (MessageSerializer.START_GAME.equals(type)) {
+            MainApp.sessionService.updateFromSnapshot(msg);
+            Platform.runLater(() -> {
+                try {
+                    if (networkTimer != null) networkTimer.cancel();
+                    MainApp.eventBus.publish(EventNames.GAME_STARTED, Map.of());
+                    openGameScene();
+                } catch (Exception e) {
+                    statusLabel.setText("Error: " + e.getMessage());
+                }
+            });
+        } else if (MessageSerializer.LOBBY_SNAPSHOT.equals(type)) {
+            MainApp.sessionService.updateFromSnapshot(msg);
+        }
+    }
+
+    private void handleHostMessage(String type, Map<String, Object> msg, InetSocketAddress sender) {
+        if (MessageSerializer.JOIN.equals(type)) {
+            String playerId = (String) msg.get("playerId");
+            String name = (String) msg.getOrDefault("name", "Jugador");
+            if (playerId == null || playerId.isBlank()) return;
+
+            Player player = MainApp.sessionService.getPlayers().get(playerId);
+            if (player == null) {
+                player = new Player(playerId, name, nextPlayerColor());
+                MainApp.sessionService.addPlayer(player);
+            } else {
+                player.setName(name);
+                player.setConnected(true);
+            }
+            MainApp.sessionService.registerPeerAddress(playerId, sender);
+            MainApp.eventBus.publish(EventNames.PLAYER_JOINED, Map.of("playerId", playerId, "name", name));
+            broadcastLobbySnapshot();
+        } else if (MessageSerializer.READY.equals(type)) {
+            String playerId = (String) msg.get("playerId");
+            MainApp.sessionService.markPlayerReady(playerId, true);
+            MainApp.eventBus.publish(EventNames.PLAYER_READY, msg);
+            Platform.runLater(() -> statusLabel.setText("Jugador listo: " + msg.getOrDefault("playerId", "?")));
+            broadcastLobbySnapshot();
+        } else if (MessageSerializer.DISCONNECT.equals(type)) {
+            String playerId = (String) msg.get("playerId");
+            MainApp.sessionService.removePlayer(playerId);
+            Platform.runLater(() -> statusLabel.setText("Jugador desconectado: " + msg.getOrDefault("playerId", "?")));
+            broadcastLobbySnapshot();
+        }
+    }
+
+    private void broadcastLobbySnapshotIfDue() {
+        long now = System.currentTimeMillis();
+        if (now - lastLobbyBroadcastAt < 250) return;
+        broadcastLobbySnapshot();
+        lastLobbyBroadcastAt = now;
+    }
+
+    private void broadcastLobbySnapshot() {
+        List<InetSocketAddress> remotes = MainApp.sessionService.getRemotePeerAddresses();
+        if (remotes.isEmpty()) return;
+        Map<String, Object> snapshot = MainApp.sessionService.getSnapshotData();
+        snapshot.put("type", MessageSerializer.LOBBY_SNAPSHOT);
+        MainApp.udpPeer.broadcast(snapshot, remotes);
+    }
+
+    private String nextPlayerColor() {
+        String[] colors = {"red", "blue", "green", "yellow"};
+        int index = Math.max(0, MainApp.sessionService.getPlayers().size()) % colors.length;
+        return colors[index];
+    }
+
+    private void openGameScene() throws Exception {
+        FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dino/views/game.fxml"));
+        Scene scene = new Scene(loader.load(), 1280, 780);
+        MainApp.getStage().setScene(scene);
     }
 }

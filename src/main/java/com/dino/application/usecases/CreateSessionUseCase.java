@@ -6,6 +6,7 @@ import com.dino.domain.entities.Player;
 import com.dino.domain.events.EventNames;
 import com.dino.infrastructure.network.UdpPeer;
 
+import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.UUID;
 
@@ -34,6 +35,7 @@ public class CreateSessionUseCase {
         Player host = new Player(playerId, playerName, "red");
         host.setX(200); host.setY(200);
         sessionService.addPlayer(host);
+        sessionService.registerPeerAddress(playerId, new InetSocketAddress(localIp, localPort));
 
         udpPeer.bind(localIp, localPort);
         eventBus.publish(EventNames.PLAYER_JOINED, Map.of("playerId", playerId, "name", playerName));

@@ -28,7 +28,7 @@ public class GameOverController implements Initializable {
 
     @Override
     public void initialize(URL url, ResourceBundle rb) {
-        List<Player> sorted = new ArrayList<>(MainApp.sessionService.getPlayers().values());
+        List<Player> sorted = new ArrayList<>(MainApp.sessionService.getPlayersSnapshot());
         sorted.sort((a, b) -> Integer.compare(b.getScore(), a.getScore()));
 
         posColumn.setCellValueFactory(data -> {
@@ -45,7 +45,7 @@ public class GameOverController implements Initializable {
             boolean tie = sorted.size() > 1 && sorted.get(0).getScore() == sorted.get(1).getScore();
             winnerLabel.setText(tie
                 ? "¡Empate!"
-                : "Ganador: " + sorted.get(0).getName() + " (" + sorted.get(0).getScore() + " pts)");
+                : "Ganador: " + sorted.get(0).getName() + " (" + sorted.get(0).getScore() + " masa)");
         }
 
         totalTimeLabel.setText("Duración: " + GameConfig.GAME_DURATION_SECONDS + "s");
@@ -53,8 +53,7 @@ public class GameOverController implements Initializable {
 
     @FXML
     public void onVolverAlMenu() {
-        if (MainApp.udpPeer != null) MainApp.udpPeer.close();
-        MainApp.sessionService.reset();
+        MainApp.resetRuntimeState();
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dino/views/start_menu.fxml"));
             Scene scene = new Scene(loader.load(), 1280, 780);

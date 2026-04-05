@@ -14,25 +14,36 @@ import static org.junit.jupiter.api.Assertions.*;
 class GameRulesTest {
 
     @Test
-    void testSinglePlayerCollectsItem() {
-        CollectibleItem item = new CollectibleItem("item1", 100, 100, 10);
-        String winner = GameRules.resolveItemCollection(item, List.of("player1"));
-        assertEquals("player1", winner);
+    void testPlayerConsumesFoodWhenTouchingIt() {
+        Player player = new Player("p1", "Alice", "red");
+        player.setX(100);
+        player.setY(100);
+        player.setMass(40);
+
+        CollectibleItem item = new CollectibleItem("food1", 108, 100, 4);
+
+        assertTrue(GameRules.canConsumeFood(player, item));
     }
 
     @Test
-    void testMultiplePlayersSameItem() {
-        CollectibleItem item = new CollectibleItem("item1", 100, 100, 10);
-        List<String> collectors = List.of("player1", "player2", "player3");
-        String winner = GameRules.resolveItemCollection(item, collectors);
-        assertNotNull(winner);
-        assertTrue(collectors.contains(winner));
+    void testLargePlayerCanConsumeSmallerPlayer() {
+        Player predator = new Player("p1", "Big", "red");
+        predator.setMass(120);
+        predator.setX(100);
+        predator.setY(100);
+
+        Player prey = new Player("p2", "Small", "blue");
+        prey.setMass(40);
+        prey.setX(108);
+        prey.setY(100);
+
+        assertTrue(GameRules.canConsumePlayer(predator, prey));
     }
 
     @Test
     void testWinnerSinglePlayer() {
         Player p = new Player("p1", "Alice", "red");
-        p.setScore(50);
+        p.setMass(50);
         Pair<Player, Boolean> result = GameRules.calculateWinner(List.of(p));
         assertNotNull(result.getKey());
         assertEquals("Alice", result.getKey().getName());
@@ -41,22 +52,24 @@ class GameRulesTest {
 
     @Test
     void testWinnerTie() {
-        Player p1 = new Player("p1", "Alice", "red");  p1.setScore(50);
-        Player p2 = new Player("p2", "Bob",   "blue"); p2.setScore(50);
+        Player p1 = new Player("p1", "Alice", "red");  p1.setMass(50);
+        Player p2 = new Player("p2", "Bob",   "blue"); p2.setMass(50);
         Pair<Player, Boolean> result = GameRules.calculateWinner(List.of(p1, p2));
         assertNull(result.getKey());
         assertTrue(result.getValue());
     }
 
     @Test
-    void testPenaltyZoneDetection() {
+    void testVirusDetectsOnlyBigPlayers() {
         Player p = new Player("p1", "Alice", "red");
-        p.setX(100); p.setY(100);
+        p.setMass(120);
+        p.setX(100);
+        p.setY(100);
 
-        PenaltyZone inside  = new PenaltyZone("z1", 110, 110, 50, -5, 0.4);
-        PenaltyZone outside = new PenaltyZone("z2", 300, 300, 30, -5, 0.4);
+        PenaltyZone inside  = new PenaltyZone("z1", 110, 110, 28, 90, 0.35);
+        PenaltyZone outside = new PenaltyZone("z2", 300, 300, 28, 90, 0.35);
 
-        PenaltyZone detected = GameRules.checkPenaltyZone(p, List.of(inside, outside));
+        PenaltyZone detected = GameRules.findTriggeredVirus(p, List.of(inside, outside));
         assertNotNull(detected);
         assertEquals("z1", detected.getId());
     }

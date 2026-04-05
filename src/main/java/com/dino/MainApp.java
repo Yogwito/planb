@@ -5,6 +5,7 @@ import com.dino.application.services.HostMatchService;
 import com.dino.application.services.SessionService;
 import com.dino.infrastructure.audio.SoundManager;
 import com.dino.infrastructure.network.UdpPeer;
+import com.dino.infrastructure.serialization.MessageSerializer;
 import com.dino.presentation.components.EventLogObserver;
 import com.dino.presentation.components.ScoreBoardObserver;
 import javafx.application.Application;
@@ -13,6 +14,9 @@ import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+
+import java.net.InetAddress;
+import java.util.Map;
 
 public class MainApp extends Application {
 
@@ -29,17 +33,14 @@ public class MainApp extends Application {
     @Override
     public void start(Stage stage) throws Exception {
         primaryStage = stage;
-        eventBus          = new EventBus();
-        sessionService    = new SessionService(eventBus);
-        soundManager      = new SoundManager(eventBus);
-        scoreBoardObserver = new ScoreBoardObserver(eventBus);
-        eventLogObserver  = new EventLogObserver(eventBus);
+        resetRuntimeState();
 
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dino/views/start_menu.fxml"));
         Scene scene = new Scene(loader.load(), 1280, 780);
         stage.setTitle("Dino Arena UDP");
         stage.setScene(scene);
         stage.setResizable(false);
+        stage.setOnCloseRequest(event -> shutdownNetworking());
 
         Rectangle2D screen = Screen.getPrimary().getVisualBounds();
         stage.setX((screen.getWidth()  - 1280) / 2);
@@ -49,6 +50,41 @@ public class MainApp extends Application {
     }
 
     public static Stage getStage() { return primaryStage; }
+
+    public static void resetRuntimeState() {
+        shutdownNetworking();
+        eventBus           = new EventBus();
+        sessionService     = new SessionService(eventBus);
+        soundManager       = new SoundManager(eventBus);
+        scoreBoardObserver = new ScoreBoardObserver(eventBus);
+        eventLogObserver   = new EventLogObserver(eventBus);
+        udpPeer            = null;
+        hostMatchService   = null;
+    }
+
+    private static void sendDisconnectIfNeeded() {
+        if (udpPeer == null || sessionService == null || !udpPeer.isBound()) return;
+        if (sessionService.isHost()) return;
+        String playerId = sessionService.getLocalPlayerId();
+        String hostIp = sessionService.getHostIp();
+        if (playerId == null || hostIp == null || hostIp.isBlank()) return;
+
+        try {
+            Map<String, Object> msg = new MessageSerializer().build(
+                MessageSerializer.DISCONNECT,
+                "playerId", playerId
+            );
+            udpPeer.send(msg, InetAddress.getByName(hostIp), sessionService.getHostPort());
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void shutdownNetworking() {
+        sendDisconnectIfNeeded();
+        if (udpPeer != null) udpPeer.close();
+        udpPeer = null;
+        hostMatchService = null;
+    }
 
     public static void main(String[] args) { launch(args); }
 }

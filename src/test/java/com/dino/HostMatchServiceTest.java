@@ -22,8 +22,8 @@ class HostMatchServiceTest {
         sessionService.setGameRunning(true);
         hostMatchService.initWorld();
 
-        host.setX(940);
-        host.setY(640);
+        host.setX(545);
+        host.setY(630);
 
         hostMatchService.tick(0.016);
 
@@ -56,7 +56,7 @@ class HostMatchServiceTest {
     }
 
     @Test
-    void levelCompletesWhenAllConnectedPlayersReachExit() {
+    void levelAdvancesWhenAllConnectedPlayersReachExit() {
         EventBus eventBus = new EventBus();
         SessionService sessionService = new SessionService(eventBus);
         HostMatchService hostMatchService = new HostMatchService(sessionService, eventBus);
@@ -68,17 +68,92 @@ class HostMatchServiceTest {
         sessionService.setGameRunning(true);
         hostMatchService.initWorld();
 
-        host.setX(1570);
-        host.setY(380);
-        guest.setX(1600);
-        guest.setY(380);
+        host.setX(1275);
+        host.setY(470);
+        guest.setX(1315);
+        guest.setY(470);
 
         hostMatchService.tick(0.016);
 
-        assertTrue(host.isAtExit());
-        assertTrue(guest.isAtExit());
-        assertFalse(sessionService.isGameRunning());
+        assertTrue(sessionService.isGameRunning());
+        assertTrue(sessionService.getCurrentLevelIndex() == 1);
         assertTrue(host.getScore() > 0);
         assertTrue(guest.getScore() > 0);
+    }
+
+    @Test
+    void campaignEndsOnLastLevel() {
+        EventBus eventBus = new EventBus();
+        SessionService sessionService = new SessionService(eventBus);
+        HostMatchService hostMatchService = new HostMatchService(sessionService, eventBus);
+
+        Player host = new Player("host", "Host", "red");
+        Player guest = new Player("guest", "Guest", "blue");
+        sessionService.addPlayer(host);
+        sessionService.addPlayer(guest);
+        sessionService.setGameRunning(true);
+        hostMatchService.initWorld();
+
+        sessionService.setCurrentLevelIndex(2);
+        sessionService.setExitZone(new com.dino.domain.entities.ExitZone(100, 700, 220, 120));
+        host.setX(120);
+        host.setY(720);
+        guest.setX(180);
+        guest.setY(720);
+
+        hostMatchService.tick(0.016);
+
+        assertFalse(sessionService.isGameRunning());
+    }
+
+    @Test
+    void elasticThreadPullsPlayersBackBeforeHardBreak() {
+        EventBus eventBus = new EventBus();
+        SessionService sessionService = new SessionService(eventBus);
+        HostMatchService hostMatchService = new HostMatchService(sessionService, eventBus);
+
+        Player host = new Player("host", "Host", "red");
+        Player guest = new Player("guest", "Guest", "blue");
+        sessionService.addPlayer(host);
+        sessionService.addPlayer(guest);
+        sessionService.setGameRunning(true);
+        hostMatchService.initWorld();
+
+        host.setX(120);
+        host.setY(740);
+        guest.setX(360);
+        guest.setY(740);
+
+        double beforeDistance = Math.abs(guest.getCenterX() - host.getCenterX());
+        hostMatchService.tick(0.016);
+        double afterDistance = Math.abs(guest.getCenterX() - host.getCenterX());
+
+        assertTrue(afterDistance < beforeDistance);
+    }
+
+    @Test
+    void playersDoNotEndTickOverlapping() {
+        EventBus eventBus = new EventBus();
+        SessionService sessionService = new SessionService(eventBus);
+        HostMatchService hostMatchService = new HostMatchService(sessionService, eventBus);
+
+        Player host = new Player("host", "Host", "red");
+        Player guest = new Player("guest", "Guest", "blue");
+        sessionService.addPlayer(host);
+        sessionService.addPlayer(guest);
+        sessionService.setGameRunning(true);
+        hostMatchService.initWorld();
+
+        host.setX(200);
+        host.setY(740);
+        guest.setX(210);
+        guest.setY(740);
+
+        hostMatchService.tick(0.016);
+
+        assertTrue(host.getX() + host.getWidth() <= guest.getX()
+            || guest.getX() + guest.getWidth() <= host.getX()
+            || host.getY() + host.getHeight() <= guest.getY()
+            || guest.getY() + guest.getHeight() <= host.getY());
     }
 }

@@ -6,55 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="7ddd0334-e46f-498c-b3a2-c3cbc6ad0c5e" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/MainApp.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/MainApp.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/application/services/HostMatchService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/application/services/HostMatchService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/application/services/SessionService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/application/services/SessionService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/config/GameConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/config/GameConfig.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/domain/entities/Player.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/domain/entities/Player.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/domain/events/EventNames.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/domain/events/EventNames.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/domain/rules/GameRules.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/domain/rules/GameRules.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/infrastructure/audio/SoundManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/infrastructure/audio/SoundManager.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/presentation/components/EventLogObserver.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/presentation/components/EventLogObserver.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/presentation/components/ScoreBoardObserver.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/presentation/components/ScoreBoardObserver.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/presentation/controllers/GameController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/presentation/controllers/GameController.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/dino/presentation/controllers/GameOverController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/dino/presentation/controllers/GameOverController.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/dino/views/game.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/dino/views/game.fxml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/dino/views/game_over.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/dino/views/game_over.fxml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/dino/views/lobby.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/dino/views/lobby.fxml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/com/dino/views/start_menu.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/com/dino/views/start_menu.fxml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/dino/GameRulesTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/dino/GameRulesTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/dino/HostMatchServiceTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/dino/HostMatchServiceTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/dino/SessionServiceTest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/test/java/com/dino/SessionServiceTest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/MainApp.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/MainApp.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/application/services/HostMatchService.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/application/services/HostMatchService.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/application/services/SessionService.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/application/services/SessionService.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/config/GameConfig.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/config/GameConfig.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/domain/entities/Player.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/domain/entities/Player.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/domain/events/EventNames.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/domain/events/EventNames.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/domain/rules/GameRules.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/domain/rules/GameRules.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/infrastructure/audio/SoundManager.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/infrastructure/audio/SoundManager.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/presentation/components/EventLogObserver.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/presentation/components/EventLogObserver.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/presentation/components/ScoreBoardObserver.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/presentation/components/ScoreBoardObserver.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/presentation/controllers/GameController$1.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/presentation/controllers/GameController$1.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/presentation/controllers/GameController.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/presentation/controllers/GameController.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/presentation/controllers/GameOverController.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/presentation/controllers/GameOverController.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/views/game.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/views/game.fxml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/views/game_over.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/views/game_over.fxml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/views/lobby.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/views/lobby.fxml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/classes/com/dino/views/start_menu.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/target/classes/com/dino/views/start_menu.fxml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst" beforeDir="false" afterPath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst" beforeDir="false" afterPath="$PROJECT_DIR$/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/surefire-reports/TEST-com.dino.GameRulesTest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/target/surefire-reports/TEST-com.dino.GameRulesTest.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/surefire-reports/TEST-com.dino.HostMatchServiceTest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/target/surefire-reports/TEST-com.dino.HostMatchServiceTest.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/surefire-reports/TEST-com.dino.MessageSerializerTest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/target/surefire-reports/TEST-com.dino.MessageSerializerTest.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/surefire-reports/TEST-com.dino.SessionServiceTest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/target/surefire-reports/TEST-com.dino.SessionServiceTest.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/surefire-reports/com.dino.GameRulesTest.txt" beforeDir="false" afterPath="$PROJECT_DIR$/target/surefire-reports/com.dino.GameRulesTest.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/surefire-reports/com.dino.HostMatchServiceTest.txt" beforeDir="false" afterPath="$PROJECT_DIR$/target/surefire-reports/com.dino.HostMatchServiceTest.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/surefire-reports/com.dino.SessionServiceTest.txt" beforeDir="false" afterPath="$PROJECT_DIR$/target/surefire-reports/com.dino.SessionServiceTest.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/test-classes/com/dino/GameRulesTest.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/test-classes/com/dino/GameRulesTest.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/test-classes/com/dino/HostMatchServiceTest.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/test-classes/com/dino/HostMatchServiceTest.class" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/target/test-classes/com/dino/SessionServiceTest.class" beforeDir="false" afterPath="$PROJECT_DIR$/target/test-classes/com/dino/SessionServiceTest.class" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

@@ -25,6 +25,8 @@ public class EventLogObserver {
             add(e.getOrDefault("playerId", "?") + " " + sign + delta + " pts");
         });
         eventBus.subscribe(EventNames.ROOM_RESET, e -> add("Sala reiniciada"));
+        eventBus.subscribe(EventNames.LEVEL_ADVANCED, e ->
+            add("Nivel " + (((Number) e.getOrDefault("levelIndex", 0)).intValue() + 1)));
         eventBus.subscribe(EventNames.LEVEL_COMPLETED, e -> add("Todos llegaron a la salida"));
     }
 

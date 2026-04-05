@@ -31,6 +31,8 @@ public class SessionService {
     private ExitZone exitZone;
     private int roomResetCount;
     private String roomResetReason = "";
+    private int currentLevelIndex;
+    private int totalLevels;
     private double elapsedTime;
     private boolean gameRunning;
 
@@ -51,6 +53,8 @@ public class SessionService {
         if (data.containsKey("gameRunning")) gameRunning = (Boolean) data.get("gameRunning");
         if (data.containsKey("roomResetCount")) roomResetCount = ((Number) data.get("roomResetCount")).intValue();
         if (data.containsKey("roomResetReason")) roomResetReason = String.valueOf(data.get("roomResetReason"));
+        if (data.containsKey("currentLevelIndex")) currentLevelIndex = ((Number) data.get("currentLevelIndex")).intValue();
+        if (data.containsKey("totalLevels")) totalLevels = ((Number) data.get("totalLevels")).intValue();
 
         if (data.containsKey("players")) {
             Set<String> snapshotPlayerIds = new HashSet<>();
@@ -65,6 +69,7 @@ public class SessionService {
                 p.setY(((Number) pd.getOrDefault("y", 0)).doubleValue());
                 p.setVx(((Number) pd.getOrDefault("vx", 0)).doubleValue());
                 p.setVy(((Number) pd.getOrDefault("vy", 0)).doubleValue());
+                p.setCoyoteTimer(((Number) pd.getOrDefault("coyoteTimer", 0)).doubleValue());
                 p.setGrounded((Boolean) pd.getOrDefault("grounded", false));
                 p.setAlive((Boolean) pd.getOrDefault("alive", true));
                 p.setAtExit((Boolean) pd.getOrDefault("atExit", false));
@@ -145,6 +150,8 @@ public class SessionService {
         snapshot.put("gameRunning", gameRunning);
         snapshot.put("roomResetCount", roomResetCount);
         snapshot.put("roomResetReason", roomResetReason);
+        snapshot.put("currentLevelIndex", currentLevelIndex);
+        snapshot.put("totalLevels", totalLevels);
 
         List<Map<String, Object>> playerList = new ArrayList<>();
         for (Player p : players.values()) {
@@ -156,6 +163,7 @@ public class SessionService {
             pd.put("y", p.getY());
             pd.put("vx", p.getVx());
             pd.put("vy", p.getVy());
+            pd.put("coyoteTimer", p.getCoyoteTimer());
             pd.put("grounded", p.isGrounded());
             pd.put("alive", p.isAlive());
             pd.put("atExit", p.isAtExit());
@@ -234,6 +242,8 @@ public class SessionService {
         exitZone = null;
         roomResetCount = 0;
         roomResetReason = "";
+        currentLevelIndex = 0;
+        totalLevels = 0;
         elapsedTime = 0;
         gameRunning = false;
         localPlayerId = null;
@@ -277,6 +287,7 @@ public class SessionService {
             copy.setY(player.getY());
             copy.setVx(player.getVx());
             copy.setVy(player.getVy());
+            copy.setCoyoteTimer(player.getCoyoteTimer());
             copy.setGrounded(player.isGrounded());
             copy.setAlive(player.isAlive());
             copy.setAtExit(player.isAtExit());
@@ -353,6 +364,10 @@ public class SessionService {
     public synchronized void setRoomResetCount(int roomResetCount) { this.roomResetCount = roomResetCount; }
     public synchronized String getRoomResetReason() { return roomResetReason; }
     public synchronized void setRoomResetReason(String roomResetReason) { this.roomResetReason = roomResetReason; }
+    public synchronized int getCurrentLevelIndex() { return currentLevelIndex; }
+    public synchronized void setCurrentLevelIndex(int currentLevelIndex) { this.currentLevelIndex = currentLevelIndex; }
+    public synchronized int getTotalLevels() { return totalLevels; }
+    public synchronized void setTotalLevels(int totalLevels) { this.totalLevels = totalLevels; }
     public synchronized double getElapsedTime() { return elapsedTime; }
     public synchronized void setElapsedTime(double elapsedTime) { this.elapsedTime = elapsedTime; }
     public synchronized boolean isGameRunning() { return gameRunning; }

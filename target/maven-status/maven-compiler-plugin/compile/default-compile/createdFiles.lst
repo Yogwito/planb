@@ -11,6 +11,8 @@ com/dino/application/services/SessionService.class
 com/dino/domain/events/EventNames.class
 com/dino/infrastructure/serialization/MessageSerializer.class
 com/dino/presentation/controllers/LobbyController$1.class
+com/dino/presentation/controllers/GameController$RenderState.class
+com/dino/presentation/controllers/GameController$Particle.class
 com/dino/presentation/controllers/GameController.class
 com/dino/presentation/components/ScoreBoardObserver.class
 com/dino/domain/rules/GameRules.class

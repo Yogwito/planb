@@ -14,13 +14,12 @@ import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
-import javafx.geometry.Point2D;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
-import javafx.scene.input.MouseButton;
+import javafx.scene.input.KeyCode;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
@@ -30,6 +29,7 @@ import java.net.InetSocketAddress;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ResourceBundle;
@@ -37,8 +37,10 @@ import java.util.ResourceBundle;
 public class GameController implements Initializable {
     @FXML private Canvas arenaCanvas;
     @FXML private Label timerLabel;
+    @FXML private Label levelLabel;
     @FXML private Label roomStatusLabel;
     @FXML private Label threadLabel;
+    @FXML private Label networkLabel;
     @FXML private Label feedbackLabel;
     @FXML private ListView<String> playersList;
     @FXML private ListView<String> eventLog;
@@ -51,14 +53,44 @@ public class GameController implements Initializable {
     private double cameraX;
     private double cameraY;
     private double feedbackTimer;
+    private double inputResendTimer;
+    private Double pendingTargetX;
+    private int pendingJumpRepeats;
+    private boolean leftPressed;
+    private boolean rightPressed;
+    private double timeSinceLastSnapshot;
+    private double lastSnapshotAgeForRender;
+    private final Map<String, RenderState> renderStates = new HashMap<>();
+    private final List<Particle> particles = new ArrayList<>();
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
-        MainApp.eventBus.subscribe(EventNames.SNAPSHOT_RECEIVED, e -> Platform.runLater(this::refreshUI));
+        MainApp.eventBus.subscribe(EventNames.SNAPSHOT_RECEIVED, e -> {
+            timeSinceLastSnapshot = 0;
+            Platform.runLater(this::refreshUI);
+        });
         MainApp.eventBus.subscribe(EventNames.ROOM_RESET, e -> Platform.runLater(() ->
-            showFeedback("Sala reiniciada", "#ffadad")));
+            {
+                showFeedback("Sala reiniciada", "#ffadad");
+                spawnBurst(490, 260, Color.web("#ffadad"), 14);
+            }));
         MainApp.eventBus.subscribe(EventNames.BUTTON_STATE_CHANGED, e -> Platform.runLater(() ->
-            showFeedback(Boolean.TRUE.equals(e.get("pressed")) ? "Boton activado" : "Boton liberado", "#ffe08a")));
+            {
+                showFeedback(Boolean.TRUE.equals(e.get("pressed")) ? "Boton activado" : "Boton liberado", "#ffe08a");
+                ButtonSwitch button = MainApp.sessionService.getButtonSwitchSnapshot();
+                if (button != null) {
+                    spawnBurst(worldToScreenX(button.getX() + button.getWidth() / 2.0, arenaCanvas.getWidth() / getViewportWorldWidth()),
+                        worldToScreenY(button.getY(), arenaCanvas.getHeight() / getViewportWorldHeight()), Color.web("#ffe08a"), 10);
+                }
+            }));
+        MainApp.eventBus.subscribe(EventNames.LEVEL_ADVANCED, e -> Platform.runLater(() ->
+            {
+                showFeedback("Nivel " + (((Number) e.getOrDefault("levelIndex", 0)).intValue() + 1), "#8be9fd");
+                spawnBurst(arenaCanvas.getWidth() * 0.5, 200, Color.web("#8be9fd"), 22);
+            }));
+        MainApp.eventBus.subscribe(EventNames.PLAYER_JUMPED, e -> onJumpEvent((String) e.get("playerId")));
+        MainApp.eventBus.subscribe(EventNames.PLAYER_COLLIDED, this::onCollisionEvent);
+        MainApp.eventBus.subscribe(EventNames.THREAD_STRETCHED, this::onThreadEvent);
         MainApp.eventBus.subscribe(EventNames.PLAYER_REACHED_EXIT, e -> onReachedExitEvent((String) e.get("playerId")));
         MainApp.eventBus.subscribe(EventNames.SCORE_CHANGED, e -> onScoreChangedEvent(e));
         MainApp.eventBus.subscribe(EventNames.GAME_OVER, e -> {
@@ -67,29 +99,52 @@ public class GameController implements Initializable {
         });
 
         feedbackLabel.setVisible(false);
-        installMouseHandlers();
+        installKeyboardHandlers();
         startGameLoop();
     }
 
-    private void installMouseHandlers() {
-        arenaCanvas.setOnMousePressed(event -> handleMouseInput(event.getButton(), event.getX(), event.getY()));
-        arenaCanvas.setOnMouseDragged(event -> {
-            if (event.isPrimaryButtonDown()) {
-                handleMouseInput(MouseButton.PRIMARY, event.getX(), event.getY());
+    private void installKeyboardHandlers() {
+        Platform.runLater(() -> {
+            Scene scene = arenaCanvas.getScene();
+            if (scene == null) return;
+            scene.setOnKeyPressed(event -> {
+                if (event.getCode() == KeyCode.LEFT) {
+                    leftPressed = true;
+                    updateMovementTarget(false);
+                } else if (event.getCode() == KeyCode.RIGHT) {
+                    rightPressed = true;
+                    updateMovementTarget(false);
+                } else if (event.getCode() == KeyCode.SPACE) {
+                    updateMovementTarget(true);
+                }
+            });
+            scene.setOnKeyReleased(event -> {
+                if (event.getCode() == KeyCode.LEFT) {
+                    leftPressed = false;
+                    updateMovementTarget(false);
+                } else if (event.getCode() == KeyCode.RIGHT) {
+                    rightPressed = false;
+                    updateMovementTarget(false);
+                }
+            });
+            arenaCanvas.requestFocus();
+            if (scene.getRoot() != null) {
+                scene.getRoot().requestFocus();
             }
         });
     }
 
-    private void handleMouseInput(MouseButton button, double canvasX, double canvasY) {
-        Point2D world = canvasToWorld(canvasX, canvasY);
-        boolean jump = button == MouseButton.SECONDARY;
-        if (button == MouseButton.PRIMARY) {
-            Player local = getLocalPlayerSnapshot();
-            if (local != null && world.getY() < local.getY() - GameConfig.MOUSE_JUMP_VERTICAL_THRESHOLD) {
-                jump = true;
-            }
+    private void updateMovementTarget(boolean jumpRequested) {
+        Player local = getLocalPlayerSnapshot();
+        if (local == null) return;
+
+        double targetX = local.getCenterX();
+        if (leftPressed && !rightPressed) {
+            targetX = -1000;
+        } else if (rightPressed && !leftPressed) {
+            targetX = GameConfig.LEVEL_WIDTH + 1000;
         }
-        sendInput(world.getX(), jump);
+        sendInput(targetX, jumpRequested);
     }
 
     private void startGameLoop() {
@@ -102,8 +157,10 @@ public class GameController implements Initializable {
                 }
                 double dt = (now - lastNano) / 1_000_000_000.0;
                 lastNano = now;
+                timeSinceLastSnapshot += dt;
 
                 if (MainApp.udpPeer != null && MainApp.udpPeer.isBound()) pollIncomingMessages();
+                if (!MainApp.sessionService.isHost()) resendPendingInput(dt);
 
                 if (MainApp.sessionService.isHost() && MainApp.hostMatchService != null) {
                     MainApp.hostMatchService.tick(dt);
@@ -117,8 +174,10 @@ public class GameController implements Initializable {
                     }
                 }
 
+                lastSnapshotAgeForRender = timeSinceLastSnapshot;
                 updateCamera(dt);
                 updateFeedback(dt);
+                updateParticles(dt);
                 render();
                 updateTimer();
             }
@@ -127,6 +186,8 @@ public class GameController implements Initializable {
     }
 
     private void sendInput(double targetX, boolean jumpRequested) {
+        pendingTargetX = targetX;
+        if (jumpRequested) pendingJumpRepeats = Math.max(pendingJumpRepeats, 2);
         if (MainApp.sessionService.isHost()) {
             if (MainApp.hostMatchService != null) {
                 MainApp.hostMatchService.handleInput(MainApp.sessionService.getLocalPlayerId(), targetX, jumpRequested);
@@ -134,6 +195,21 @@ public class GameController implements Initializable {
             return;
         }
 
+        sendInputPacket(targetX, jumpRequested);
+    }
+
+    private void resendPendingInput(double dt) {
+        if (pendingTargetX == null) return;
+        inputResendTimer += dt;
+        if (inputResendTimer < GameConfig.CLIENT_INPUT_RESEND_SECONDS) return;
+        inputResendTimer = 0;
+
+        boolean jump = pendingJumpRepeats > 0;
+        if (jump) pendingJumpRepeats--;
+        sendInputPacket(pendingTargetX, jump);
+    }
+
+    private void sendInputPacket(double targetX, boolean jumpRequested) {
         try {
             Map<String, Object> msg = serializer.build(
                 MessageSerializer.INPUT,
@@ -204,46 +280,66 @@ public class GameController implements Initializable {
         double scaleY = height / viewportH;
 
         GraphicsContext gc = arenaCanvas.getGraphicsContext2D();
-        gc.setFill(Color.web("#101522"));
-        gc.fillRect(0, 0, width, height);
-
+        drawBackdrop(gc, width, height);
         drawBackgroundGrid(gc, width, height, scaleX, scaleY);
+        drawBackdropShapes(gc, width, height, scaleX, scaleY);
 
         ExitZone exitZone = MainApp.sessionService.getExitZoneSnapshot();
         if (exitZone != null) {
             double x = worldToScreenX(exitZone.getX(), scaleX);
             double y = worldToScreenY(exitZone.getY(), scaleY);
-            gc.setFill(Color.web("#274c77"));
+            gc.setFill(Color.web("#1f3b5b"));
             gc.fillRect(x, y, exitZone.getWidth() * scaleX, exitZone.getHeight() * scaleY);
-            gc.setStroke(Color.web("#5fa8d3"));
-            gc.setLineWidth(3);
+            gc.setFill(Color.web("#4cc9f055"));
+            gc.fillRoundRect(x + 10, y + 10, exitZone.getWidth() * scaleX - 20, exitZone.getHeight() * scaleY - 20, 16, 16);
+            gc.setStroke(Color.web("#87e0ff"));
+            gc.setLineWidth(4);
             gc.strokeRect(x, y, exitZone.getWidth() * scaleX, exitZone.getHeight() * scaleY);
             gc.setFill(Color.WHITE);
-            gc.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-            gc.fillText("SALIDA", x + 18, y + 24);
+            gc.setFont(Font.font("Arial", FontWeight.BOLD, 15));
+            gc.fillText("SALIDA", x + 22, y + 26);
         }
 
         for (PlatformTile platform : MainApp.sessionService.getPlatformsSnapshot()) {
             double x = worldToScreenX(platform.getX(), scaleX);
             double y = worldToScreenY(platform.getY(), scaleY);
-            gc.setFill(Color.web("#58657c"));
-            gc.fillRoundRect(x, y, platform.getWidth() * scaleX, platform.getHeight() * scaleY, 12, 12);
-            gc.setStroke(Color.web("#8d99ae"));
-            gc.strokeRoundRect(x, y, platform.getWidth() * scaleX, platform.getHeight() * scaleY, 12, 12);
+            double drawW = platform.getWidth() * scaleX;
+            double drawH = platform.getHeight() * scaleY;
+            gc.setFill(Color.web("#3b4658"));
+            gc.fillRoundRect(x, y + 4, drawW, drawH, 12, 12);
+            gc.setFill(Color.web("#64748b"));
+            gc.fillRoundRect(x, y, drawW, drawH, 12, 12);
+            gc.setFill(Color.web("#94a3b8"));
+            gc.fillRoundRect(x + 8, y + 4, Math.max(0, drawW - 16), Math.max(6, drawH * 0.25), 10, 10);
+            gc.setStroke(Color.web("#cbd5e1"));
+            gc.setLineWidth(1.5);
+            gc.strokeRoundRect(x, y, drawW, drawH, 12, 12);
         }
 
         ButtonSwitch button = MainApp.sessionService.getButtonSwitchSnapshot();
         if (button != null) {
-            gc.setFill(button.isPressed() ? Color.web("#ffd166") : Color.web("#8d6a9f"));
-            gc.fillRoundRect(worldToScreenX(button.getX(), scaleX), worldToScreenY(button.getY(), scaleY),
-                button.getWidth() * scaleX, button.getHeight() * scaleY, 10, 10);
+            double x = worldToScreenX(button.getX(), scaleX);
+            double y = worldToScreenY(button.getY(), scaleY);
+            double drawW = button.getWidth() * scaleX;
+            double drawH = button.getHeight() * scaleY;
+            gc.setFill(button.isPressed() ? Color.web("#ffd166") : Color.web("#7c3aed"));
+            gc.fillRoundRect(x, y, drawW, drawH, 10, 10);
+            gc.setFill(button.isPressed() ? Color.web("#fff1ad") : Color.web("#c4b5fd"));
+            gc.fillRoundRect(x + 8, y + 2, Math.max(0, drawW - 16), Math.max(4, drawH - 6), 8, 8);
         }
 
         Door door = MainApp.sessionService.getDoorSnapshot();
         if (door != null && !door.isOpen()) {
-            gc.setFill(Color.web("#be95c4"));
-            gc.fillRoundRect(worldToScreenX(door.getX(), scaleX), worldToScreenY(door.getY(), scaleY),
-                door.getWidth() * scaleX, door.getHeight() * scaleY, 14, 14);
+            double x = worldToScreenX(door.getX(), scaleX);
+            double y = worldToScreenY(door.getY(), scaleY);
+            double drawW = door.getWidth() * scaleX;
+            double drawH = door.getHeight() * scaleY;
+            gc.setFill(Color.web("#8b5cf6"));
+            gc.fillRoundRect(x, y, drawW, drawH, 14, 14);
+            gc.setFill(Color.web("#6d28d9"));
+            gc.fillRoundRect(x + 8, y + 10, Math.max(0, drawW - 16), Math.max(0, drawH - 20), 10, 10);
+            gc.setFill(Color.web("#e9d5ff"));
+            gc.fillOval(x + drawW - 18, y + drawH / 2.0 - 6, 8, 8);
         }
 
         List<Player> players = MainApp.sessionService.getPlayersSnapshot().stream()
@@ -251,48 +347,121 @@ public class GameController implements Initializable {
             .sorted(Comparator.comparingDouble(Player::getX))
             .toList();
 
-        gc.setStroke(Color.web("#80ed9988"));
-        gc.setLineWidth(4);
+        updateRenderStates(players, 1.0 / Math.max(1, GameConfig.FPS));
+
+        gc.setStroke(Color.web("#4cc9f044"));
+        gc.setLineWidth(8);
         for (int i = 0; i < players.size() - 1; i++) {
-            Player a = players.get(i);
-            Player b = players.get(i + 1);
-            gc.strokeLine(
-                worldToScreenX(a.getCenterX(), scaleX),
-                worldToScreenY(a.getCenterY(), scaleY),
-                worldToScreenX(b.getCenterX(), scaleX),
-                worldToScreenY(b.getCenterY(), scaleY)
-            );
+            RenderState a = renderStates.get(players.get(i).getId());
+            RenderState b = renderStates.get(players.get(i + 1).getId());
+            if (a == null || b == null) continue;
+            double midX = (a.x + b.x) / 2.0;
+            double sag = Math.min(16, Math.abs(b.x - a.x) * 0.05);
+            gc.beginPath();
+            gc.moveTo(worldToScreenX(a.centerX(players.get(i).getWidth()), scaleX), worldToScreenY(a.centerY(players.get(i).getHeight()), scaleY));
+            gc.quadraticCurveTo(worldToScreenX(midX, scaleX), worldToScreenY((a.y + b.y) / 2.0 + sag, scaleY),
+                worldToScreenX(b.centerX(players.get(i + 1).getWidth()), scaleX), worldToScreenY(b.centerY(players.get(i + 1).getHeight()), scaleY));
+            gc.stroke();
+        }
+        gc.setStroke(Color.web("#80ed99cc"));
+        gc.setLineWidth(3);
+        for (int i = 0; i < players.size() - 1; i++) {
+            RenderState a = renderStates.get(players.get(i).getId());
+            RenderState b = renderStates.get(players.get(i + 1).getId());
+            if (a == null || b == null) continue;
+            double midX = (a.x + b.x) / 2.0;
+            double sag = Math.min(16, Math.abs(b.x - a.x) * 0.05);
+            gc.beginPath();
+            gc.moveTo(worldToScreenX(a.centerX(players.get(i).getWidth()), scaleX), worldToScreenY(a.centerY(players.get(i).getHeight()), scaleY));
+            gc.quadraticCurveTo(worldToScreenX(midX, scaleX), worldToScreenY((a.y + b.y) / 2.0 + sag, scaleY),
+                worldToScreenX(b.centerX(players.get(i + 1).getWidth()), scaleX), worldToScreenY(b.centerY(players.get(i + 1).getHeight()), scaleY));
+            gc.stroke();
         }
 
         Player localPlayer = getLocalPlayerSnapshot();
         for (Player player : players) {
+            RenderState state = renderStates.get(player.getId());
+            if (state == null) continue;
             Color base = GameConfig.COLORS.getOrDefault(player.getColor(), Color.WHITE);
-            double x = worldToScreenX(player.getX(), scaleX);
-            double y = worldToScreenY(player.getY(), scaleY);
+            double x = worldToScreenX(state.x, scaleX);
+            double y = worldToScreenY(state.y, scaleY);
             double drawW = player.getWidth() * scaleX;
             double drawH = player.getHeight() * scaleY;
+            double stretch = Math.max(-0.18, Math.min(0.22, player.getVy() / 900.0));
+            double renderH = drawH * (1.0 + stretch);
+            double renderW = drawW * (1.0 - stretch * 0.55);
+            double adjustedX = x + (drawW - renderW) / 2.0;
+            double adjustedY = y + (drawH - renderH);
 
+            gc.setFill(Color.color(0, 0, 0, 0.22));
+            gc.fillRoundRect(adjustedX + 4, adjustedY + 6, renderW, renderH, 18, 18);
             gc.setFill(player.isAtExit() ? base.brighter() : base);
-            gc.fillRoundRect(x, y, drawW, drawH, 18, 18);
+            gc.fillRoundRect(adjustedX, adjustedY, renderW, renderH, 18, 18);
+            gc.setFill(base.interpolate(Color.WHITE, 0.35));
+            gc.fillRoundRect(adjustedX + 6, adjustedY + 5, Math.max(8, renderW - 12), Math.max(10, renderH * 0.28), 14, 14);
             gc.setStroke(localPlayer != null && player.getId().equals(localPlayer.getId()) ? Color.WHITE : base.darker());
             gc.setLineWidth(localPlayer != null && player.getId().equals(localPlayer.getId()) ? 4 : 2);
-            gc.strokeRoundRect(x, y, drawW, drawH, 18, 18);
+            gc.strokeRoundRect(adjustedX, adjustedY, renderW, renderH, 18, 18);
+
+            double eyeY = adjustedY + renderH * 0.35;
+            double leftEyeX = adjustedX + renderW * 0.33;
+            double rightEyeX = adjustedX + renderW * 0.63;
+            gc.setFill(Color.WHITE);
+            gc.fillOval(leftEyeX, eyeY, 6, 6);
+            gc.fillOval(rightEyeX, eyeY, 6, 6);
+            gc.setFill(Color.web("#1e293b"));
+            gc.fillOval(leftEyeX + 2, eyeY + 1, 2.5, 2.5);
+            gc.fillOval(rightEyeX + 2, eyeY + 1, 2.5, 2.5);
+            gc.setStroke(Color.web("#1e293b"));
+            gc.setLineWidth(1.5);
+            gc.strokeArc(adjustedX + renderW * 0.34, adjustedY + renderH * 0.52, renderW * 0.30, renderH * 0.18, 180, 180, javafx.scene.shape.ArcType.OPEN);
 
             gc.setFill(Color.WHITE);
             gc.setFont(Font.font("Arial", FontWeight.BOLD, Math.max(11, 12 * currentZoom)));
-            gc.fillText(player.getName() + " · " + player.getScore(), x - 2, y - 10);
+            gc.fillText(player.getName() + " · " + player.getScore(), adjustedX - 2, adjustedY - 12);
 
             if (localPlayer != null && player.getId().equals(localPlayer.getId())) {
                 double targetX = worldToScreenX(player.getTargetX(), scaleX);
-                gc.setStroke(Color.web("#ffffff66"));
+                gc.setStroke(Color.web("#ffffff99"));
                 gc.setLineWidth(2);
-                gc.strokeLine(worldToScreenX(player.getCenterX(), scaleX), y + drawH + 6, targetX, y + drawH + 6);
+                gc.strokeLine(worldToScreenX(state.centerX(player.getWidth()), scaleX), adjustedY + renderH + 6, targetX, adjustedY + renderH + 6);
+                gc.setFill(Color.web("#ffffffcc"));
+                gc.fillOval(targetX - 4, adjustedY + renderH + 2, 8, 8);
             }
+        }
+
+        renderParticles(gc, scaleX, scaleY);
+    }
+
+    private void drawBackdrop(GraphicsContext gc, double width, double height) {
+        gc.setFill(Color.web("#0b1020"));
+        gc.fillRect(0, 0, width, height);
+        gc.setFill(Color.web("#11213a"));
+        gc.fillOval(-120, -80, 420, 260);
+        gc.setFill(Color.web("#152844"));
+        gc.fillOval(width - 320, -40, 380, 220);
+        gc.setFill(Color.web("#0f1b2d"));
+        gc.fillRect(0, height * 0.72, width, height * 0.28);
+    }
+
+    private void drawBackdropShapes(GraphicsContext gc, double width, double height, double scaleX, double scaleY) {
+        gc.setFill(Color.web("#14233b"));
+        for (int i = 0; i < 6; i++) {
+            double x = ((i * 320.0) - (cameraX * 0.18)) % (width + 220);
+            double hillX = x - 120;
+            gc.fillRoundRect(hillX, height - 130 - (i % 2) * 24, 220, 140, 80, 80);
+        }
+
+        gc.setStroke(Color.web("#ffffff10"));
+        gc.setLineWidth(1);
+        for (int i = 0; i < 18; i++) {
+            double px = ((i * 140.0) - (cameraX * 0.12)) % (width + 80);
+            gc.strokeLine(px, 0, px + 24, 18);
         }
     }
 
     private void drawBackgroundGrid(GraphicsContext gc, double width, double height, double scaleX, double scaleY) {
-        gc.setStroke(Color.web("#182033"));
+        gc.setStroke(Color.web("#1a2740"));
         gc.setLineWidth(1);
         for (int gx = 0; gx <= GameConfig.LEVEL_WIDTH; gx += 80) {
             double sx = worldToScreenX(gx, scaleX);
@@ -316,14 +485,21 @@ public class GameController implements Initializable {
 
         eventLog.getItems().setAll(MainApp.eventLogObserver.getEntries());
         Door door = MainApp.sessionService.getDoorSnapshot();
+        levelLabel.setText("Nivel " + (MainApp.sessionService.getCurrentLevelIndex() + 1) + "/" + Math.max(1, MainApp.sessionService.getTotalLevels()));
         roomStatusLabel.setText(door != null && door.isOpen()
-            ? "Puerta abierta: todos pueden pasar"
-            : "Click izquierdo mueve · click derecho salta · abre la puerta con el boton");
+            ? "Puerta abierta: avancen juntos hacia la salida"
+            : switch (MainApp.sessionService.getCurrentLevelIndex()) {
+                case 0 -> "Nivel 1: activen el boton y crucen juntos";
+                case 1 -> "Nivel 2: mantengan el hilo corto en los saltos";
+                default -> "Nivel 3: coordinen el ritmo y no se separen";
+            });
         threadLabel.setText("Hilo maximo: " + (int) GameConfig.THREAD_MAX_DISTANCE + " px");
+        networkLabel.setText(connectionText());
     }
 
     private void updateTimer() {
         timerLabel.setText(String.format("Tiempo: %.1fs", MainApp.sessionService.getElapsedTime()));
+        networkLabel.setText(connectionText());
     }
 
     private void onGameOver() {
@@ -344,8 +520,18 @@ public class GameController implements Initializable {
         double targetZoom = calculateZoomForSpread(MainApp.sessionService.getPlayersSnapshot());
         currentZoom += (targetZoom - currentZoom) * Math.min(1.0, GameConfig.CAMERA_SMOOTHING * (dt * 60.0));
 
-        double targetX = clampCameraX(localPlayer.getCenterX() - getViewportWorldWidth() / 2.0);
-        double targetY = clampCameraY(localPlayer.getCenterY() - getViewportWorldHeight() / 2.0);
+        List<Player> connectedPlayers = MainApp.sessionService.getPlayersSnapshot().stream()
+            .filter(Player::isConnected)
+            .toList();
+        double groupCenterX = connectedPlayers.stream().mapToDouble(Player::getCenterX).average().orElse(localPlayer.getCenterX());
+        double groupCenterY = connectedPlayers.stream().mapToDouble(Player::getCenterY).average().orElse(localPlayer.getCenterY());
+        double focusX = localPlayer.getCenterX() * (1.0 - GameConfig.CAMERA_GROUP_INFLUENCE)
+            + groupCenterX * GameConfig.CAMERA_GROUP_INFLUENCE;
+        double focusY = localPlayer.getCenterY() * (1.0 - GameConfig.CAMERA_GROUP_INFLUENCE)
+            + groupCenterY * GameConfig.CAMERA_GROUP_INFLUENCE;
+
+        double targetX = clampCameraX(focusX - getViewportWorldWidth() / 2.0);
+        double targetY = clampCameraY(focusY - getViewportWorldHeight() / 2.0);
         cameraX += (targetX - cameraX) * Math.min(1.0, GameConfig.CAMERA_SMOOTHING * (dt * 60.0));
         cameraY += (targetY - cameraY) * Math.min(1.0, GameConfig.CAMERA_SMOOTHING * (dt * 60.0));
         cameraX = clampCameraX(cameraX);
@@ -375,8 +561,31 @@ public class GameController implements Initializable {
     private void onReachedExitEvent(String playerId) {
         String localId = MainApp.sessionService.getLocalPlayerId();
         if (localId != null && localId.equals(playerId)) {
-            Platform.runLater(() -> showFeedback("Llegaste a la salida", "#80ed99"));
+            Platform.runLater(() -> {
+                showFeedback("Llegaste a la salida", "#80ed99");
+                spawnBurst(arenaCanvas.getWidth() * 0.5, 180, Color.web("#80ed99"), 18);
+            });
         }
+    }
+
+    private void onJumpEvent(String playerId) {
+        String localId = MainApp.sessionService.getLocalPlayerId();
+        if (localId == null || !localId.equals(playerId)) return;
+        Platform.runLater(() -> spawnBurst(arenaCanvas.getWidth() * 0.48, arenaCanvas.getHeight() * 0.64, Color.web("#c4b5fd"), 8));
+    }
+
+    private void onCollisionEvent(Map<String, Object> payload) {
+        String localId = MainApp.sessionService.getLocalPlayerId();
+        if (localId == null) return;
+        if (!localId.equals(payload.get("playerA")) && !localId.equals(payload.get("playerB"))) return;
+        Platform.runLater(() -> spawnBurst(arenaCanvas.getWidth() * 0.5, arenaCanvas.getHeight() * 0.6, Color.web("#fca5a5"), 8));
+    }
+
+    private void onThreadEvent(Map<String, Object> payload) {
+        String localId = MainApp.sessionService.getLocalPlayerId();
+        if (localId == null) return;
+        if (!localId.equals(payload.get("playerA")) && !localId.equals(payload.get("playerB"))) return;
+        Platform.runLater(() -> spawnBurst(arenaCanvas.getWidth() * 0.5, arenaCanvas.getHeight() * 0.45, Color.web("#80ed99"), 6));
     }
 
     private void onScoreChangedEvent(Map<String, Object> payload) {
@@ -384,7 +593,10 @@ public class GameController implements Initializable {
         if (localId == null || !localId.equals(payload.get("playerId"))) return;
         int delta = ((Number) payload.getOrDefault("delta", 0)).intValue();
         String sign = delta >= 0 ? "+" : "";
-        Platform.runLater(() -> showFeedback(sign + delta + " puntos", delta >= 0 ? "#8be9fd" : "#ffadad"));
+        Platform.runLater(() -> {
+            showFeedback(sign + delta + " puntos", delta >= 0 ? "#8be9fd" : "#ffadad");
+            spawnBurst(arenaCanvas.getWidth() * 0.52, 120, delta >= 0 ? Color.web("#8be9fd") : Color.web("#ffadad"), 10);
+        });
     }
 
     private Player getLocalPlayerSnapshot() {
@@ -410,14 +622,6 @@ public class GameController implements Initializable {
         return Math.max(GameConfig.MIN_ZOOM, Math.min(GameConfig.MAX_ZOOM, zoom));
     }
 
-    private Point2D canvasToWorld(double canvasX, double canvasY) {
-        double scaleX = arenaCanvas.getWidth() / getViewportWorldWidth();
-        double scaleY = arenaCanvas.getHeight() / getViewportWorldHeight();
-        double worldX = cameraX + (canvasX / scaleX);
-        double worldY = cameraY + (canvasY / scaleY);
-        return new Point2D(worldX, worldY);
-    }
-
     private double getViewportWorldWidth() {
         return GameConfig.VIEWPORT_W / currentZoom;
     }
@@ -440,5 +644,110 @@ public class GameController implements Initializable {
 
     private double worldToScreenY(double worldY, double scaleY) {
         return (worldY - cameraY) * scaleY;
+    }
+
+    private void updateRenderStates(List<Player> players, double dt) {
+        for (Player player : players) {
+            RenderState state = renderStates.computeIfAbsent(player.getId(), ignored -> new RenderState(player.getX(), player.getY()));
+            if (MainApp.sessionService.isHost()) {
+                state.x = player.getX();
+                state.y = player.getY();
+                state.vx = player.getVx();
+                state.vy = player.getVy();
+            } else {
+                boolean isLocalClientPlayer = player.getId().equals(MainApp.sessionService.getLocalPlayerId());
+                double predictionWindow = Math.min(
+                    isLocalClientPlayer ? GameConfig.LOCAL_CLIENT_PREDICTION_SECONDS : GameConfig.REMOTE_PREDICTION_SECONDS,
+                    lastSnapshotAgeForRender
+                );
+                double targetX = player.getX() + player.getVx() * predictionWindow;
+                double targetY = player.getY() + player.getVy() * predictionWindow;
+                double blend = 1.0 - Math.pow(1.0 - GameConfig.REMOTE_SMOOTHING, Math.max(1.0, dt * 60.0));
+                state.x += (targetX - state.x) * blend;
+                state.y += (targetY - state.y) * blend;
+                state.vx += (player.getVx() - state.vx) * blend;
+                state.vy += (player.getVy() - state.vy) * blend;
+            }
+        }
+        renderStates.keySet().removeIf(id -> players.stream().noneMatch(player -> player.getId().equals(id)));
+    }
+
+    private void updateParticles(double dt) {
+        particles.removeIf(particle -> {
+            particle.life -= dt;
+            particle.x += particle.vx * dt;
+            particle.y += particle.vy * dt;
+            particle.vy += 160 * dt;
+            return particle.life <= 0;
+        });
+    }
+
+    private void renderParticles(GraphicsContext gc, double scaleX, double scaleY) {
+        for (Particle particle : particles) {
+            double alpha = Math.max(0, particle.life / particle.maxLife);
+            gc.setFill(particle.color.deriveColor(0, 1, 1, alpha));
+            gc.fillOval(particle.x - particle.size / 2.0, particle.y - particle.size / 2.0, particle.size, particle.size);
+        }
+    }
+
+    private void spawnBurst(double screenX, double screenY, Color color, int count) {
+        for (int i = 0; i < count; i++) {
+            double angle = (Math.PI * 2 * i) / Math.max(1, count);
+            double speed = 36 + (i % 4) * 12;
+            particles.add(new Particle(
+                screenX,
+                screenY,
+                Math.cos(angle) * speed,
+                Math.sin(angle) * speed - 18,
+                0.55 + (i % 3) * 0.08,
+                4 + (i % 3),
+                color
+            ));
+        }
+    }
+
+    private String connectionText() {
+        if (MainApp.sessionService.isHost()) return "UDP host estable · 24 Hz";
+        long ms = Math.round(timeSinceLastSnapshot * 1000.0);
+        if (timeSinceLastSnapshot < GameConfig.SNAPSHOT_STALE_WARNING_SECONDS) return "UDP estable · " + ms + " ms";
+        if (timeSinceLastSnapshot < GameConfig.SNAPSHOT_STALE_WARNING_SECONDS * 2.0) return "UDP con retraso · " + ms + " ms";
+        return "UDP inestable · " + ms + " ms";
+    }
+
+    private static final class RenderState {
+        double x;
+        double y;
+        double vx;
+        double vy;
+
+        RenderState(double x, double y) {
+            this.x = x;
+            this.y = y;
+        }
+
+        double centerX(double width) { return x + width / 2.0; }
+        double centerY(double height) { return y + height / 2.0; }
+    }
+
+    private static final class Particle {
+        double x;
+        double y;
+        double vx;
+        double vy;
+        double life;
+        double maxLife;
+        double size;
+        Color color;
+
+        Particle(double x, double y, double vx, double vy, double life, double size, Color color) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.life = life;
+            this.maxLife = life;
+            this.size = size;
+            this.color = color;
+        }
     }
 }

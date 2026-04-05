@@ -15,12 +15,17 @@ import java.util.List;
 import java.util.Map;
 
 public class HostMatchService {
+    private static final double COLLISION_SOUND_COOLDOWN = 0.12;
+    private static final double THREAD_SOUND_COOLDOWN = 0.16;
+
     private final SessionService sessionService;
     private final EventBus eventBus;
     private final Map<String, InputState> playerInputs = new HashMap<>();
     private boolean gameOver = false;
     private boolean buttonScoreAwarded = false;
     private int nextFinishOrder = 1;
+    private double collisionSoundCooldownRemaining = 0;
+    private double threadSoundCooldownRemaining = 0;
 
     public HostMatchService(SessionService sessionService, EventBus eventBus) {
         this.sessionService = sessionService;
@@ -28,28 +33,8 @@ public class HostMatchService {
     }
 
     public void initWorld() {
-        sessionService.getPlatforms().clear();
-        sessionService.getSpawnPoints().clear();
-
-        sessionService.getPlatforms().add(new PlatformTile("ground", 0, 820, GameConfig.LEVEL_WIDTH, 80));
-        sessionService.getPlatforms().add(new PlatformTile("left_step", 180, 690, 220, 24));
-        sessionService.getPlatforms().add(new PlatformTile("middle_step", 520, 610, 240, 24));
-        sessionService.getPlatforms().add(new PlatformTile("button_ledge", 880, 680, 180, 24));
-        sessionService.getPlatforms().add(new PlatformTile("door_ledge", 1210, 560, 210, 24));
-        sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1500, 470, 220, 24));
-
-        sessionService.getSpawnPoints().add(new double[]{90, 740});
-        sessionService.getSpawnPoints().add(new double[]{150, 740});
-        sessionService.getSpawnPoints().add(new double[]{210, 740});
-        sessionService.getSpawnPoints().add(new double[]{270, 740});
-
-        ButtonSwitch button = new ButtonSwitch("button", 930, 664, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT);
-        Door door = new Door("door", 1320, 412, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT);
-        ExitZone exitZone = new ExitZone(1560, 360, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT);
-
-        sessionService.setButtonSwitch(button);
-        sessionService.setDoor(door);
-        sessionService.setExitZone(exitZone);
+        sessionService.setCurrentLevelIndex(0);
+        sessionService.setTotalLevels(GameConfig.TOTAL_LEVELS);
         sessionService.setElapsedTime(0);
         sessionService.setGameRunning(true);
         sessionService.setRoomResetCount(0);
@@ -58,8 +43,7 @@ public class HostMatchService {
         gameOver = false;
         buttonScoreAwarded = false;
         nextFinishOrder = 1;
-
-        resetRoomState();
+        loadLevel(0, true);
     }
 
     public void handleInput(String playerId, double targetX, boolean jumpPressed) {
@@ -72,12 +56,17 @@ public class HostMatchService {
     public void tick(double dt) {
         if (gameOver || !sessionService.isGameRunning()) return;
         sessionService.setElapsedTime(sessionService.getElapsedTime() + dt);
+        collisionSoundCooldownRemaining = Math.max(0, collisionSoundCooldownRemaining - dt);
+        threadSoundCooldownRemaining = Math.max(0, threadSoundCooldownRemaining - dt);
 
         List<Player> players = new ArrayList<>(sessionService.getPlayers().values());
         for (Player player : players) {
             if (!player.isConnected()) continue;
             updatePlayer(player, dt);
         }
+
+        applyThreadElasticity(players, dt);
+        resolvePlayerCollisions(players);
 
         updateButtonAndDoor(players);
         updateExitState(players);
@@ -94,10 +83,7 @@ public class HostMatchService {
         }
 
         if (GameRules.allConnectedPlayersAtExit(players)) {
-            gameOver = true;
-            sessionService.setGameRunning(false);
-            eventBus.publish(EventNames.LEVEL_COMPLETED, Map.of("elapsedTime", sessionService.getElapsedTime()));
-            eventBus.publish(EventNames.GAME_OVER, Map.of("elapsedTime", sessionService.getElapsedTime()));
+            advanceLevelOrFinish();
         }
     }
 
@@ -117,11 +103,26 @@ public class HostMatchService {
             }
             player.setTargetX(input.targetX);
         }
-        player.setVx(moveDirection * GameConfig.MOVE_SPEED);
+        double targetVelocity = moveDirection * GameConfig.MOVE_SPEED;
+        double velocityDelta = targetVelocity - player.getVx();
+        double acceleration = moveDirection == 0 ? GameConfig.MOVE_FRICTION : GameConfig.MOVE_ACCELERATION;
+        double maxDelta = acceleration * dt;
+        if (Math.abs(velocityDelta) > maxDelta) {
+            velocityDelta = Math.signum(velocityDelta) * maxDelta;
+        }
+        player.setVx(player.getVx() + velocityDelta);
 
-        if (input.jumpQueued && player.isGrounded()) {
+        if (player.isGrounded()) {
+            player.setCoyoteTimer(GameConfig.COYOTE_TIME_SECONDS);
+        } else {
+            player.setCoyoteTimer(Math.max(0, player.getCoyoteTimer() - dt));
+        }
+
+        if (input.jumpQueued && (player.isGrounded() || player.getCoyoteTimer() > 0)) {
             player.setVy(GameConfig.JUMP_VELOCITY);
             player.setGrounded(false);
+            player.setCoyoteTimer(0);
+            eventBus.publish(EventNames.PLAYER_JUMPED, Map.of("playerId", player.getId()));
         }
         input.jumpQueued = false;
 
@@ -172,6 +173,7 @@ public class HostMatchService {
                 player.setY(platform.getY() - player.getHeight());
                 player.setVy(0);
                 player.setGrounded(true);
+                player.setCoyoteTimer(GameConfig.COYOTE_TIME_SECONDS);
             } else if (player.getVy() < 0) {
                 player.setY(platform.getY() + platform.getHeight());
                 player.setVy(0);
@@ -183,6 +185,7 @@ public class HostMatchService {
             if (player.getVy() > 0) {
                 player.setY(door.getY() - player.getHeight());
                 player.setGrounded(true);
+                player.setCoyoteTimer(GameConfig.COYOTE_TIME_SECONDS);
             } else {
                 player.setY(door.getY() + door.getHeight());
             }
@@ -195,6 +198,107 @@ public class HostMatchService {
         if (player.getY() < 0) {
             player.setY(0);
             player.setVy(0);
+        }
+    }
+
+    private void applyThreadElasticity(List<Player> players, double dt) {
+        List<Player> connected = players.stream()
+            .filter(player -> player.isConnected() && player.isAlive())
+            .sorted((a, b) -> Double.compare(a.getX(), b.getX()))
+            .toList();
+
+        for (int i = 0; i < connected.size() - 1; i++) {
+            Player a = connected.get(i);
+            Player b = connected.get(i + 1);
+            double dx = b.getCenterX() - a.getCenterX();
+            double dy = b.getCenterY() - a.getCenterY();
+            double distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance <= GameConfig.THREAD_REST_DISTANCE || distance == 0) continue;
+
+            double stretch = distance - GameConfig.THREAD_REST_DISTANCE;
+            double pull = Math.min(stretch * GameConfig.THREAD_PULL_FACTOR * dt, stretch * 0.5);
+            double nx = dx / distance;
+            double ny = dy / distance;
+
+            if (stretch > 8 && threadSoundCooldownRemaining <= 0) {
+                threadSoundCooldownRemaining = THREAD_SOUND_COOLDOWN;
+                eventBus.publish(EventNames.THREAD_STRETCHED, Map.of(
+                    "playerA", a.getId(),
+                    "playerB", b.getId(),
+                    "stretch", stretch
+                ));
+            }
+
+            a.setX(a.getX() + nx * pull * 0.5);
+            a.setY(a.getY() + ny * pull * 0.18);
+            b.setX(b.getX() - nx * pull * 0.5);
+            b.setY(b.getY() - ny * pull * 0.18);
+
+            clampPlayer(a);
+            clampPlayer(b);
+
+            if (distance > GameConfig.THREAD_HARD_LIMIT) {
+                double excess = distance - GameConfig.THREAD_HARD_LIMIT;
+                a.setX(a.getX() + nx * excess * 0.5);
+                b.setX(b.getX() - nx * excess * 0.5);
+                clampPlayer(a);
+                clampPlayer(b);
+            }
+        }
+    }
+
+    private void resolvePlayerCollisions(List<Player> players) {
+        List<Player> connected = players.stream()
+            .filter(player -> player.isConnected() && player.isAlive())
+            .toList();
+
+        for (int i = 0; i < connected.size(); i++) {
+            for (int j = i + 1; j < connected.size(); j++) {
+                Player a = connected.get(i);
+                Player b = connected.get(j);
+                if (!GameRules.intersects(a, b)) continue;
+
+                double overlapX = Math.min(a.getX() + a.getWidth(), b.getX() + b.getWidth()) - Math.max(a.getX(), b.getX());
+                double overlapY = Math.min(a.getY() + a.getHeight(), b.getY() + b.getHeight()) - Math.max(a.getY(), b.getY());
+                if (overlapX <= 0 || overlapY <= 0) continue;
+
+                if (overlapX < overlapY) {
+                    double push = overlapX / 2.0 + 0.01;
+                    if (a.getCenterX() < b.getCenterX()) {
+                        a.setX(a.getX() - push);
+                        b.setX(b.getX() + push);
+                    } else {
+                        a.setX(a.getX() + push);
+                        b.setX(b.getX() - push);
+                    }
+                    a.setVx(0);
+                    b.setVx(0);
+                } else {
+                    double push = overlapY / 2.0 + 0.01;
+                    if (a.getCenterY() < b.getCenterY()) {
+                        a.setY(a.getY() - push);
+                        b.setY(b.getY() + push);
+                        a.setGrounded(true);
+                    } else {
+                        a.setY(a.getY() + push);
+                        b.setY(b.getY() - push);
+                        b.setGrounded(true);
+                    }
+                    a.setVy(0);
+                    b.setVy(0);
+                }
+
+                if (collisionSoundCooldownRemaining <= 0) {
+                    collisionSoundCooldownRemaining = COLLISION_SOUND_COOLDOWN;
+                    eventBus.publish(EventNames.PLAYER_COLLIDED, Map.of(
+                        "playerA", a.getId(),
+                        "playerB", b.getId()
+                    ));
+                }
+
+                clampPlayer(a);
+                clampPlayer(b);
+            }
         }
     }
 
@@ -253,6 +357,96 @@ public class HostMatchService {
         eventBus.publish(EventNames.ROOM_RESET, Map.of("reason", reason));
     }
 
+    private void advanceLevelOrFinish() {
+        int nextLevel = sessionService.getCurrentLevelIndex() + 1;
+        if (nextLevel >= sessionService.getTotalLevels()) {
+            gameOver = true;
+            sessionService.setGameRunning(false);
+            eventBus.publish(EventNames.LEVEL_COMPLETED, Map.of(
+                "elapsedTime", sessionService.getElapsedTime(),
+                "levelIndex", sessionService.getCurrentLevelIndex()
+            ));
+            eventBus.publish(EventNames.GAME_OVER, Map.of("elapsedTime", sessionService.getElapsedTime()));
+            return;
+        }
+
+        loadLevel(nextLevel, false);
+        eventBus.publish(EventNames.LEVEL_ADVANCED, Map.of("levelIndex", nextLevel));
+    }
+
+    private void loadLevel(int levelIndex, boolean resetScores) {
+        sessionService.setCurrentLevelIndex(levelIndex);
+        sessionService.getPlatforms().clear();
+        sessionService.getSpawnPoints().clear();
+
+        sessionService.getPlatforms().add(new PlatformTile("ground", 0, 820, GameConfig.LEVEL_WIDTH, 80));
+        switch (levelIndex) {
+            case 0 -> loadLevelOne();
+            case 1 -> loadLevelTwo();
+            default -> loadLevelThree();
+        }
+
+        if (resetScores) {
+            for (Player player : sessionService.getPlayers().values()) {
+                player.setScore(0);
+                player.setDeaths(0);
+            }
+        }
+        buttonScoreAwarded = false;
+        resetRoomState();
+    }
+
+    private void loadLevelOne() {
+        sessionService.getPlatforms().add(new PlatformTile("spawn_step", 150, 730, 220, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_ledge", 430, 690, 220, 24));
+        sessionService.getPlatforms().add(new PlatformTile("bridge_step", 710, 650, 200, 24));
+        sessionService.getPlatforms().add(new PlatformTile("door_ledge", 960, 610, 220, 24));
+        sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1220, 570, 220, 24));
+
+        addDefaultSpawns(120, 740);
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 500, 674, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1042, 462, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1265, 460, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+    }
+
+    private void loadLevelTwo() {
+        sessionService.getPlatforms().add(new PlatformTile("spawn_step", 140, 730, 190, 24));
+        sessionService.getPlatforms().add(new PlatformTile("mid_one", 360, 690, 170, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_ledge", 590, 650, 180, 24));
+        sessionService.getPlatforms().add(new PlatformTile("mid_two", 850, 610, 180, 24));
+        sessionService.getPlatforms().add(new PlatformTile("door_ledge", 1120, 570, 220, 24));
+        sessionService.getPlatforms().add(new PlatformTile("mid_three", 1380, 530, 170, 24));
+        sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1570, 490, 190, 24));
+
+        addDefaultSpawns(110, 740);
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 645, 634, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1212, 422, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1605, 380, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+    }
+
+    private void loadLevelThree() {
+        sessionService.getPlatforms().add(new PlatformTile("spawn_step", 140, 730, 180, 24));
+        sessionService.getPlatforms().add(new PlatformTile("mid_one", 340, 700, 170, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_ledge", 560, 665, 190, 24));
+        sessionService.getPlatforms().add(new PlatformTile("mid_two", 800, 625, 180, 24));
+        sessionService.getPlatforms().add(new PlatformTile("mid_three", 1010, 585, 170, 24));
+        sessionService.getPlatforms().add(new PlatformTile("door_ledge", 1235, 545, 190, 24));
+        sessionService.getPlatforms().add(new PlatformTile("mid_four", 1470, 505, 170, 24));
+        sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1660, 465, 170, 24));
+
+        addDefaultSpawns(120, 740);
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 615, 649, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1312, 397, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1695, 355, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+    }
+
+    private void addDefaultSpawns(double baseX, double baseY) {
+        sessionService.getSpawnPoints().add(new double[]{baseX, baseY});
+        sessionService.getSpawnPoints().add(new double[]{baseX + 60, baseY});
+        sessionService.getSpawnPoints().add(new double[]{baseX + 120, baseY});
+        sessionService.getSpawnPoints().add(new double[]{baseX + 180, baseY});
+    }
+
     private void resetRoomState() {
         int index = 0;
         List<double[]> spawns = sessionService.getSpawnPoints();
@@ -263,6 +457,7 @@ public class HostMatchService {
             player.setY(spawn[1]);
             player.setVx(0);
             player.setVy(0);
+            player.setCoyoteTimer(0);
             player.setGrounded(false);
             player.setAlive(true);
             player.setAtExit(false);

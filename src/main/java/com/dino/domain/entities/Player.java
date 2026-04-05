@@ -10,6 +10,7 @@ public class Player {
     private double y;
     private double vx;
     private double vy;
+    private double coyoteTimer;
     private boolean grounded;
     private boolean alive;
     private boolean atExit;
@@ -74,6 +75,8 @@ public class Player {
     public void setVx(double vx) { this.vx = vx; }
     public double getVy() { return vy; }
     public void setVy(double vy) { this.vy = vy; }
+    public double getCoyoteTimer() { return coyoteTimer; }
+    public void setCoyoteTimer(double coyoteTimer) { this.coyoteTimer = coyoteTimer; }
     public boolean isGrounded() { return grounded; }
     public void setGrounded(boolean grounded) { this.grounded = grounded; }
     public boolean isAlive() { return alive; }

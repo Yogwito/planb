@@ -29,6 +29,12 @@ public final class GameRules {
             door.getX(), door.getY(), door.getWidth(), door.getHeight());
     }
 
+    public static boolean intersects(Player a, Player b) {
+        if (a == null || b == null || a == b) return false;
+        return intersects(a.getX(), a.getY(), a.getWidth(), a.getHeight(),
+            b.getX(), b.getY(), b.getWidth(), b.getHeight());
+    }
+
     public static boolean isPressingButton(Player player, ButtonSwitch button) {
         if (player == null || button == null || !player.isAlive()) return false;
         return intersects(player.getX(), player.getY(), player.getWidth(), player.getHeight(),
@@ -54,14 +60,17 @@ public final class GameRules {
     public static boolean violatesThreadDistance(Player movingPlayer, Collection<Player> players) {
         for (Player other : players) {
             if (other == movingPlayer || !other.isConnected() || !other.isAlive()) continue;
-            double dx = movingPlayer.getCenterX() - other.getCenterX();
-            double dy = movingPlayer.getCenterY() - other.getCenterY();
-            double distanceSquared = dx * dx + dy * dy;
-            if (distanceSquared > GameConfig.THREAD_MAX_DISTANCE * GameConfig.THREAD_MAX_DISTANCE) {
+            if (distance(movingPlayer, other) > GameConfig.THREAD_HARD_LIMIT) {
                 return true;
             }
         }
         return false;
+    }
+
+    public static double distance(Player a, Player b) {
+        double dx = a.getCenterX() - b.getCenterX();
+        double dy = a.getCenterY() - b.getCenterY();
+        return Math.sqrt(dx * dx + dy * dy);
     }
 
     public static PlatformTile findSupportingPlatform(Player player, List<PlatformTile> platforms) {

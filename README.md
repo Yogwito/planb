@@ -1,14 +1,14 @@
 # Threaded
 
-Juego multijugador 2D con Java, JavaFX y sockets UDP. Dos o más jugadores comparten una sala cooperativa con una restricción de distancia llamada `thread`: si se separan demasiado, el movimiento se bloquea. Deben colaborar para abrir la puerta y llegar a la salida, pero compiten por el mayor puntaje final.
+Juego multijugador 2D con Java, JavaFX y sockets UDP. Dos o más jugadores comparten una campaña corta de salas cooperativas con una restricción de distancia llamada `thread`: si se separan demasiado, el cable se tensa y termina corrigiendo su movimiento. Deben colaborar para abrir la puerta y llegar a la salida, pero compiten por el mayor puntaje final.
 
 ## Reglas del MVP
 
-1. El movimiento principal usa mouse: click izquierdo para mover, click derecho para saltar.
-2. Los jugadores no pueden separarse más que la distancia máxima del `thread`.
+1. El movimiento temporal usa `flechas izquierda/derecha` y `Space` para saltar.
+2. Los jugadores no pueden separarse más que la distancia máxima del `thread`, y además el cable actúa como resorte.
 3. Un jugador debe activar el botón para abrir la puerta.
 4. Si un jugador cae al vacío, la sala se reinicia para todos.
-5. La partida termina cuando todos los jugadores conectados llegan a la salida.
+5. La campaña avanza por varias salas; la partida termina cuando todos los jugadores conectados completan la última salida.
 6. Gana el jugador con más puntos; en empate, gana quien llegó antes y con menos caídas.
 
 ## Puntaje
@@ -63,6 +63,7 @@ Juego multijugador 2D con Java, JavaFX y sockets UDP. Dos o más jugadores compa
   - resuelve colisiones,
   - actualiza puntajes,
   - difunde snapshots.
+- El cliente suaviza visualmente a los jugadores remotos, pero no altera el estado lógico recibido del host.
 
 ## Flujo de pantallas
 

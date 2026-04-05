@@ -5,8 +5,12 @@
 /Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/application/usecases/CreateSessionUseCase.java
 /Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/application/usecases/JoinSessionUseCase.java
 /Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/config/GameConfig.java
+/Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/domain/entities/ButtonSwitch.java
 /Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/domain/entities/CollectibleItem.java
+/Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/domain/entities/Door.java
+/Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/domain/entities/ExitZone.java
 /Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/domain/entities/PenaltyZone.java
+/Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/domain/entities/PlatformTile.java
 /Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/domain/entities/Player.java
 /Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/domain/events/EventNames.java
 /Users/yogo/Yogo/Uni/planB/src/main/java/com/dino/domain/rules/GameRules.java

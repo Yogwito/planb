@@ -9,13 +9,13 @@
       fx:controller="com.dino.presentation.controllers.StartMenuController"
       alignment="CENTER"
       spacing="20"
-      style="-fx-background-color: #1a1a2e; -fx-padding: 60;">
+      style="-fx-background-color: #0f1724; -fx-padding: 60;">
 
-    <Label text="DINO ARENA"
-           style="-fx-font-size: 56px; -fx-font-weight: bold; -fx-text-fill: white; -fx-font-family: 'Arial';"/>
+    <Label text="THREADED"
+           style="-fx-font-size: 56px; -fx-font-weight: bold; -fx-text-fill: white;"/>
 
-    <Label text="Multijugador UDP"
-           style="-fx-font-size: 18px; -fx-text-fill: #e94560; -fx-font-style: italic;"/>
+    <Label text="Cooperativo 2D por salas"
+           style="-fx-font-size: 18px; -fx-text-fill: #4cc9f0; -fx-font-style: italic;"/>
 
     <VBox spacing="8" maxWidth="400" style="-fx-padding: 20 0 10 0;">
         <Label text="Nombre del jugador"
@@ -23,7 +23,7 @@
         <TextField fx:id="playerNameField"
                    promptText="Tu nombre"
                    style="-fx-background-color: #16213e; -fx-text-fill: white; -fx-prompt-text-fill: #666699;
-                          -fx-border-color: #e94560; -fx-border-radius: 4; -fx-background-radius: 4;
+                          -fx-border-color: #4cc9f0; -fx-border-radius: 4; -fx-background-radius: 4;
                           -fx-padding: 10; -fx-font-size: 14px;"/>
     </VBox>
 
@@ -108,7 +108,7 @@
     <Button text="ABRIR LOBBY"
             fx:id="openLobbyBtn"
             onAction="#onAbrirLobby"
-            style="-fx-background-color: #e94560; -fx-text-fill: white; -fx-font-weight: bold;
+            style="-fx-background-color: #4cc9f0; -fx-text-fill: #0f1724; -fx-font-weight: bold;
                    -fx-font-size: 16px; -fx-padding: 14 50; -fx-background-radius: 6; -fx-cursor: hand;"
             maxWidth="300"/>
 

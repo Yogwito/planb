@@ -1,12 +1,22 @@
 package com.dino.domain.entities;
 
+import com.dino.config.GameConfig;
+
 public class Player {
     private String id;
     private String name;
     private String color;
     private double x;
     private double y;
-    private double mass;
+    private double vx;
+    private double vy;
+    private boolean grounded;
+    private boolean alive;
+    private boolean atExit;
+    private double targetX;
+    private int score;
+    private int deaths;
+    private int finishOrder;
     private boolean connected;
     private boolean ready;
 
@@ -16,25 +26,38 @@ public class Player {
         this.id = id;
         this.name = name;
         this.color = color;
-        this.mass = 28.0;
+        this.alive = true;
         this.connected = true;
         this.ready = false;
+        this.targetX = 0;
     }
 
-    public void addMass(double delta) {
-        setMass(this.mass + delta);
+    public double getWidth() {
+        return GameConfig.PLAYER_WIDTH;
     }
 
-    public void setMass(double mass) {
-        this.mass = Math.max(0, mass);
+    public double getHeight() {
+        return GameConfig.PLAYER_HEIGHT;
     }
 
-    public double getMass() {
-        return mass;
+    public double getCenterX() {
+        return x + getWidth() / 2.0;
     }
 
-    public double getRadius(double radiusScale) {
-        return Math.max(10.0, Math.sqrt(Math.max(1.0, mass)) * radiusScale);
+    public double getCenterY() {
+        return y + getHeight() / 2.0;
+    }
+
+    public int getScore() {
+        return score;
+    }
+
+    public void setScore(int score) {
+        this.score = score;
+    }
+
+    public void addScore(int delta) {
+        this.score = Math.max(0, this.score + delta);
     }
 
     public String getId() { return id; }
@@ -47,8 +70,22 @@ public class Player {
     public void setX(double x) { this.x = x; }
     public double getY() { return y; }
     public void setY(double y) { this.y = y; }
-    public int getScore() { return (int) Math.round(this.mass); }
-    public void setScore(int score) { setMass(score); }
+    public double getVx() { return vx; }
+    public void setVx(double vx) { this.vx = vx; }
+    public double getVy() { return vy; }
+    public void setVy(double vy) { this.vy = vy; }
+    public boolean isGrounded() { return grounded; }
+    public void setGrounded(boolean grounded) { this.grounded = grounded; }
+    public boolean isAlive() { return alive; }
+    public void setAlive(boolean alive) { this.alive = alive; }
+    public boolean isAtExit() { return atExit; }
+    public void setAtExit(boolean atExit) { this.atExit = atExit; }
+    public double getTargetX() { return targetX; }
+    public void setTargetX(double targetX) { this.targetX = targetX; }
+    public int getDeaths() { return deaths; }
+    public void setDeaths(int deaths) { this.deaths = deaths; }
+    public int getFinishOrder() { return finishOrder; }
+    public void setFinishOrder(int finishOrder) { this.finishOrder = finishOrder; }
     public boolean isConnected() { return connected; }
     public void setConnected(boolean connected) { this.connected = connected; }
     public boolean isReady() { return ready; }

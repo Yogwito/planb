@@ -3,6 +3,7 @@ com/dino/application/usecases/JoinSessionUseCase.class
 com/dino/application/services/HostMatchService.class
 com/dino/infrastructure/audio/SoundManager.class
 com/dino/application/services/EventBus.class
+com/dino/application/services/HostMatchService$InputState.class
 com/dino/MainApp.class
 com/dino/application/usecases/CreateSessionUseCase.class
 com/dino/domain/entities/CollectibleItem.class
@@ -13,6 +14,8 @@ com/dino/presentation/controllers/LobbyController$1.class
 com/dino/presentation/controllers/GameController.class
 com/dino/presentation/components/ScoreBoardObserver.class
 com/dino/domain/rules/GameRules.class
+com/dino/domain/entities/ButtonSwitch.class
+com/dino/domain/entities/PlatformTile.class
 com/dino/domain/entities/Player.class
 com/dino/presentation/components/EventLogObserver.class
 com/dino/config/GameConfig.class
@@ -20,4 +23,6 @@ com/dino/presentation/controllers/GameOverController.class
 com/dino/presentation/controllers/StartMenuController.class
 com/dino/presentation/controllers/GameController$1.class
 com/dino/presentation/controllers/LobbyController.class
+com/dino/domain/entities/ExitZone.class
 com/dino/infrastructure/network/UdpPeer.class
+com/dino/domain/entities/Door.class

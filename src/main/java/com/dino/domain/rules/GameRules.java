@@ -1,86 +1,76 @@
 package com.dino.domain.rules;
 
 import com.dino.config.GameConfig;
-import com.dino.domain.entities.CollectibleItem;
-import com.dino.domain.entities.PenaltyZone;
+import com.dino.domain.entities.ButtonSwitch;
+import com.dino.domain.entities.Door;
+import com.dino.domain.entities.ExitZone;
+import com.dino.domain.entities.PlatformTile;
 import com.dino.domain.entities.Player;
-import javafx.util.Pair;
 
+import java.util.Collection;
 import java.util.List;
-import java.util.Random;
 
-public class GameRules {
+public final class GameRules {
+    private GameRules() {}
 
-    private static final Random random = new Random();
-
-    public static boolean canConsumeFood(Player player, CollectibleItem item) {
-        if (player == null || item == null || !item.isActive()) return false;
-        return distance(player.getX(), player.getY(), item.getX(), item.getY())
-            <= player.getRadius(GameConfig.PLAYER_RADIUS_SCALE) + GameConfig.FOOD_RADIUS;
+    public static boolean intersects(double ax, double ay, double aw, double ah,
+                                     double bx, double by, double bw, double bh) {
+        return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
     }
 
-    public static boolean canConsumePlayer(Player predator, Player prey) {
-        if (predator == null || prey == null || predator == prey) return false;
-        if (!predator.isConnected() || !prey.isConnected()) return false;
-        if (predator.getMass() < prey.getMass() * GameConfig.PLAYER_EAT_RATIO) return false;
-
-        double predatorRadius = predator.getRadius(GameConfig.PLAYER_RADIUS_SCALE);
-        double preyRadius = prey.getRadius(GameConfig.PLAYER_RADIUS_SCALE);
-        double reach = predatorRadius - preyRadius * GameConfig.PLAYER_EAT_OVERLAP_MARGIN;
-        return reach > 0 && distance(predator.getX(), predator.getY(), prey.getX(), prey.getY()) <= reach;
+    public static boolean intersects(Player player, PlatformTile platform) {
+        return intersects(player.getX(), player.getY(), player.getWidth(), player.getHeight(),
+            platform.getX(), platform.getY(), platform.getWidth(), platform.getHeight());
     }
 
-    public static Pair<Player, Boolean> calculateWinner(List<Player> players) {
-        if (players == null || players.isEmpty()) return new Pair<>(null, false);
-        Player winner = null;
-        double maxMass = Double.NEGATIVE_INFINITY;
-        boolean tie = false;
-        for (Player p : players) {
-            if (p.getMass() > maxMass) {
-                maxMass = p.getMass();
-                winner = p;
-                tie = false;
-            } else if (Double.compare(p.getMass(), maxMass) == 0) {
-                tie = true;
+    public static boolean intersects(Player player, Door door) {
+        if (door == null || door.isOpen()) return false;
+        return intersects(player.getX(), player.getY(), player.getWidth(), player.getHeight(),
+            door.getX(), door.getY(), door.getWidth(), door.getHeight());
+    }
+
+    public static boolean isPressingButton(Player player, ButtonSwitch button) {
+        if (player == null || button == null || !player.isAlive()) return false;
+        return intersects(player.getX(), player.getY(), player.getWidth(), player.getHeight(),
+            button.getX(), button.getY(), button.getWidth(), button.getHeight());
+    }
+
+    public static boolean isInsideExit(Player player, ExitZone exitZone) {
+        if (player == null || exitZone == null || !player.isAlive()) return false;
+        return intersects(player.getX(), player.getY(), player.getWidth(), player.getHeight(),
+            exitZone.getX(), exitZone.getY(), exitZone.getWidth(), exitZone.getHeight());
+    }
+
+    public static boolean allConnectedPlayersAtExit(Collection<Player> players) {
+        boolean hasConnectedPlayers = false;
+        for (Player player : players) {
+            if (!player.isConnected()) continue;
+            hasConnectedPlayers = true;
+            if (!player.isAtExit()) return false;
+        }
+        return hasConnectedPlayers;
+    }
+
+    public static boolean violatesThreadDistance(Player movingPlayer, Collection<Player> players) {
+        for (Player other : players) {
+            if (other == movingPlayer || !other.isConnected() || !other.isAlive()) continue;
+            double dx = movingPlayer.getCenterX() - other.getCenterX();
+            double dy = movingPlayer.getCenterY() - other.getCenterY();
+            double distanceSquared = dx * dx + dy * dy;
+            if (distanceSquared > GameConfig.THREAD_MAX_DISTANCE * GameConfig.THREAD_MAX_DISTANCE) {
+                return true;
             }
         }
-        return tie ? new Pair<>(null, true) : new Pair<>(winner, false);
+        return false;
     }
 
-    public static PenaltyZone findTriggeredVirus(Player player, List<PenaltyZone> zones) {
-        if (player == null || zones == null) return null;
-        for (PenaltyZone zone : zones) {
-            double playerRadius = player.getRadius(GameConfig.PLAYER_RADIUS_SCALE);
-            double distance = distance(player.getX(), player.getY(), zone.getX(), zone.getY());
-            if (player.getMass() >= zone.getTriggerMass() && distance <= playerRadius + zone.getRadius()) {
-                return zone;
-            }
+    public static PlatformTile findSupportingPlatform(Player player, List<PlatformTile> platforms) {
+        for (PlatformTile platform : platforms) {
+            boolean withinX = player.getX() + player.getWidth() > platform.getX()
+                && player.getX() < platform.getX() + platform.getWidth();
+            boolean onTop = Math.abs((player.getY() + player.getHeight()) - platform.getY()) < 2.5;
+            if (withinX && onTop) return platform;
         }
         return null;
-    }
-
-    public static double speedForMass(double mass) {
-        double normalized = Math.max(1.0, mass / GameConfig.PLAYER_START_MASS);
-        double speed = GameConfig.PLAYER_BASE_SPEED / Math.pow(normalized, 0.42);
-        return Math.max(GameConfig.PLAYER_MIN_SPEED, speed);
-    }
-
-    public static double decayForMass(double mass, double dtSeconds) {
-        if (mass <= GameConfig.PLAYER_DECAY_THRESHOLD) return 0;
-        return mass * GameConfig.PLAYER_DECAY_RATE * dtSeconds;
-    }
-
-    public static double distance(double ax, double ay, double bx, double by) {
-        double dx = ax - bx;
-        double dy = ay - by;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    public static double randomArenaX() {
-        return GameConfig.ARENA_X + random.nextDouble() * GameConfig.ARENA_W;
-    }
-
-    public static double randomArenaY() {
-        return GameConfig.ARENA_Y + random.nextDouble() * GameConfig.ARENA_H;
     }
 }

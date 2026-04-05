@@ -3,45 +3,82 @@ package com.dino;
 import com.dino.application.services.EventBus;
 import com.dino.application.services.HostMatchService;
 import com.dino.application.services.SessionService;
-import com.dino.config.GameConfig;
 import com.dino.domain.entities.Player;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HostMatchServiceTest {
 
     @Test
-    void hostResolvesPlayerConsumptionAuthoritatively() {
+    void hostOpensDoorWhenButtonIsPressed() {
         EventBus eventBus = new EventBus();
         SessionService sessionService = new SessionService(eventBus);
         HostMatchService hostMatchService = new HostMatchService(sessionService, eventBus);
 
-        Player predator = new Player("predator", "Big", "red");
-        predator.setConnected(true);
-        predator.setMass(120);
-        predator.setX(200);
-        predator.setY(200);
-
-        Player prey = new Player("prey", "Small", "blue");
-        prey.setConnected(true);
-        prey.setMass(40);
-        prey.setX(205);
-        prey.setY(200);
-
-        sessionService.addPlayer(predator);
-        sessionService.addPlayer(prey);
+        Player host = new Player("host", "Host", "red");
+        sessionService.addPlayer(host);
         sessionService.setGameRunning(true);
-        sessionService.setGameTimer(60);
+        hostMatchService.initWorld();
+
+        host.setX(940);
+        host.setY(640);
 
         hostMatchService.tick(0.016);
 
-        assertTrue(predator.getMass() > 120);
-        assertEquals(GameConfig.PLAYER_RESPAWN_MASS, prey.getMass());
-        assertTrue(prey.getX() >= GameConfig.ARENA_X);
-        assertTrue(prey.getX() <= GameConfig.ARENA_X + GameConfig.ARENA_W);
-        assertTrue(prey.getY() >= GameConfig.ARENA_Y);
-        assertTrue(prey.getY() <= GameConfig.ARENA_Y + GameConfig.ARENA_H);
+        assertTrue(sessionService.getButtonSwitch().isPressed());
+        assertTrue(sessionService.getDoor().isOpen());
+        assertTrue(host.getScore() >= 25);
+    }
+
+    @Test
+    void hostResetsRoomWhenPlayerFalls() {
+        EventBus eventBus = new EventBus();
+        SessionService sessionService = new SessionService(eventBus);
+        HostMatchService hostMatchService = new HostMatchService(sessionService, eventBus);
+
+        Player host = new Player("host", "Host", "red");
+        sessionService.addPlayer(host);
+        sessionService.setGameRunning(true);
+        hostMatchService.initWorld();
+
+        double initialSpawnX = host.getX();
+        host.setY(1200);
+
+        hostMatchService.tick(0.016);
+
+        assertTrue(sessionService.getRoomResetCount() > 0);
+        assertTrue(host.getY() < 900);
+        assertTrue(host.getX() == initialSpawnX);
+        assertFalse(sessionService.getDoor().isOpen());
+        assertTrue(host.getDeaths() > 0);
+    }
+
+    @Test
+    void levelCompletesWhenAllConnectedPlayersReachExit() {
+        EventBus eventBus = new EventBus();
+        SessionService sessionService = new SessionService(eventBus);
+        HostMatchService hostMatchService = new HostMatchService(sessionService, eventBus);
+
+        Player host = new Player("host", "Host", "red");
+        Player guest = new Player("guest", "Guest", "blue");
+        sessionService.addPlayer(host);
+        sessionService.addPlayer(guest);
+        sessionService.setGameRunning(true);
+        hostMatchService.initWorld();
+
+        host.setX(1570);
+        host.setY(380);
+        guest.setX(1600);
+        guest.setY(380);
+
+        hostMatchService.tick(0.016);
+
+        assertTrue(host.isAtExit());
+        assertTrue(guest.isAtExit());
+        assertFalse(sessionService.isGameRunning());
+        assertTrue(host.getScore() > 0);
+        assertTrue(guest.getScore() > 0);
     }
 }

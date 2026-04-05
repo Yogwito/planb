@@ -37,7 +37,7 @@ public class MainApp extends Application {
 
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/dino/views/start_menu.fxml"));
         Scene scene = new Scene(loader.load(), 1280, 780);
-        stage.setTitle("Dino Arena UDP");
+        stage.setTitle("Threaded");
         stage.setScene(scene);
         stage.setResizable(false);
         stage.setOnCloseRequest(event -> shutdownNetworking());

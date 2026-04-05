@@ -1,7 +1,9 @@
 package com.dino.application.services;
 
-import com.dino.domain.entities.CollectibleItem;
-import com.dino.domain.entities.PenaltyZone;
+import com.dino.domain.entities.ButtonSwitch;
+import com.dino.domain.entities.Door;
+import com.dino.domain.entities.ExitZone;
+import com.dino.domain.entities.PlatformTile;
 import com.dino.domain.entities.Player;
 import com.dino.domain.events.EventNames;
 
@@ -22,9 +24,14 @@ public class SessionService {
 
     private final Map<String, Player> players = new LinkedHashMap<>();
     private final Map<String, InetSocketAddress> peerAddresses = new LinkedHashMap<>();
-    private final List<CollectibleItem> items = new ArrayList<>();
-    private final List<PenaltyZone> penaltyZones = new ArrayList<>();
-    private double gameTimer;
+    private final List<PlatformTile> platforms = new ArrayList<>();
+    private final List<double[]> spawnPoints = new ArrayList<>();
+    private ButtonSwitch buttonSwitch;
+    private Door door;
+    private ExitZone exitZone;
+    private int roomResetCount;
+    private String roomResetReason = "";
+    private double elapsedTime;
     private boolean gameRunning;
 
     public SessionService(EventBus eventBus) {
@@ -32,6 +39,7 @@ public class SessionService {
     }
 
     public synchronized void addPlayer(Player player) { players.put(player.getId(), player); }
+
     public synchronized void removePlayer(String playerId) {
         players.remove(playerId);
         peerAddresses.remove(playerId);
@@ -39,8 +47,10 @@ public class SessionService {
 
     @SuppressWarnings("unchecked")
     public synchronized void updateFromSnapshot(Map<String, Object> data) {
-        if (data.containsKey("gameTimer"))   gameTimer   = ((Number) data.get("gameTimer")).doubleValue();
+        if (data.containsKey("elapsedTime")) elapsedTime = ((Number) data.get("elapsedTime")).doubleValue();
         if (data.containsKey("gameRunning")) gameRunning = (Boolean) data.get("gameRunning");
+        if (data.containsKey("roomResetCount")) roomResetCount = ((Number) data.get("roomResetCount")).intValue();
+        if (data.containsKey("roomResetReason")) roomResetReason = String.valueOf(data.get("roomResetReason"));
 
         if (data.containsKey("players")) {
             Set<String> snapshotPlayerIds = new HashSet<>();
@@ -49,11 +59,19 @@ public class SessionService {
                 snapshotPlayerIds.add(id);
                 Player p = players.computeIfAbsent(id, k -> new Player());
                 p.setId(id);
-                if (pd.get("name")  != null) p.setName((String) pd.get("name"));
-                if (pd.get("color") != null) p.setColor((String) pd.get("color"));
-                if (pd.get("x")     != null) p.setX(((Number) pd.get("x")).doubleValue());
-                if (pd.get("y")     != null) p.setY(((Number) pd.get("y")).doubleValue());
-                if (pd.get("mass")  != null) p.setMass(((Number) pd.get("mass")).doubleValue());
+                p.setName((String) pd.getOrDefault("name", p.getName()));
+                p.setColor((String) pd.getOrDefault("color", p.getColor()));
+                p.setX(((Number) pd.getOrDefault("x", 0)).doubleValue());
+                p.setY(((Number) pd.getOrDefault("y", 0)).doubleValue());
+                p.setVx(((Number) pd.getOrDefault("vx", 0)).doubleValue());
+                p.setVy(((Number) pd.getOrDefault("vy", 0)).doubleValue());
+                p.setGrounded((Boolean) pd.getOrDefault("grounded", false));
+                p.setAlive((Boolean) pd.getOrDefault("alive", true));
+                p.setAtExit((Boolean) pd.getOrDefault("atExit", false));
+                p.setTargetX(((Number) pd.getOrDefault("targetX", p.getX())).doubleValue());
+                p.setScore(((Number) pd.getOrDefault("score", 0)).intValue());
+                p.setDeaths(((Number) pd.getOrDefault("deaths", 0)).intValue());
+                p.setFinishOrder(((Number) pd.getOrDefault("finishOrder", 0)).intValue());
                 p.setConnected((Boolean) pd.getOrDefault("connected", true));
                 p.setReady((Boolean) pd.getOrDefault("ready", false));
             }
@@ -61,31 +79,61 @@ public class SessionService {
             peerAddresses.keySet().removeIf(id -> !snapshotPlayerIds.contains(id));
         }
 
-        if (data.containsKey("items")) {
-            items.clear();
-            for (Map<String, Object> id : (List<Map<String, Object>>) data.get("items")) {
-                CollectibleItem item = new CollectibleItem();
-                item.setId((String) id.get("id"));
-                item.setX(((Number) id.get("x")).doubleValue());
-                item.setY(((Number) id.get("y")).doubleValue());
-                item.setPoints(((Number) id.get("points")).intValue());
-                item.setActive((Boolean) id.getOrDefault("active", true));
-                items.add(item);
+        if (data.containsKey("platforms")) {
+            platforms.clear();
+            for (Map<String, Object> raw : (List<Map<String, Object>>) data.get("platforms")) {
+                PlatformTile platform = new PlatformTile();
+                platform.setId((String) raw.get("id"));
+                platform.setX(((Number) raw.get("x")).doubleValue());
+                platform.setY(((Number) raw.get("y")).doubleValue());
+                platform.setWidth(((Number) raw.get("width")).doubleValue());
+                platform.setHeight(((Number) raw.get("height")).doubleValue());
+                platforms.add(platform);
             }
         }
 
-        if (data.containsKey("penaltyZones")) {
-            penaltyZones.clear();
-            for (Map<String, Object> zd : (List<Map<String, Object>>) data.get("penaltyZones")) {
-                PenaltyZone zone = new PenaltyZone();
-                zone.setId((String) zd.get("id"));
-                zone.setX(((Number) zd.get("x")).doubleValue());
-                zone.setY(((Number) zd.get("y")).doubleValue());
-                zone.setRadius(((Number) zd.get("radius")).doubleValue());
-                zone.setTriggerMass(((Number) zd.getOrDefault("triggerMass", 90.0)).doubleValue());
-                zone.setBurstRatio(((Number) zd.getOrDefault("burstRatio", 0.35)).doubleValue());
-                penaltyZones.add(zone);
+        if (data.containsKey("spawnPoints")) {
+            spawnPoints.clear();
+            for (Map<String, Object> raw : (List<Map<String, Object>>) data.get("spawnPoints")) {
+                spawnPoints.add(new double[]{
+                    ((Number) raw.get("x")).doubleValue(),
+                    ((Number) raw.get("y")).doubleValue()
+                });
             }
+        }
+
+        if (data.containsKey("buttonSwitch")) {
+            Map<String, Object> raw = (Map<String, Object>) data.get("buttonSwitch");
+            ButtonSwitch button = new ButtonSwitch();
+            button.setId((String) raw.get("id"));
+            button.setX(((Number) raw.get("x")).doubleValue());
+            button.setY(((Number) raw.get("y")).doubleValue());
+            button.setWidth(((Number) raw.get("width")).doubleValue());
+            button.setHeight(((Number) raw.get("height")).doubleValue());
+            button.setPressed((Boolean) raw.getOrDefault("pressed", false));
+            buttonSwitch = button;
+        }
+
+        if (data.containsKey("door")) {
+            Map<String, Object> raw = (Map<String, Object>) data.get("door");
+            Door value = new Door();
+            value.setId((String) raw.get("id"));
+            value.setX(((Number) raw.get("x")).doubleValue());
+            value.setY(((Number) raw.get("y")).doubleValue());
+            value.setWidth(((Number) raw.get("width")).doubleValue());
+            value.setHeight(((Number) raw.get("height")).doubleValue());
+            value.setOpen((Boolean) raw.getOrDefault("open", false));
+            door = value;
+        }
+
+        if (data.containsKey("exitZone")) {
+            Map<String, Object> raw = (Map<String, Object>) data.get("exitZone");
+            ExitZone value = new ExitZone();
+            value.setX(((Number) raw.get("x")).doubleValue());
+            value.setY(((Number) raw.get("y")).doubleValue());
+            value.setWidth(((Number) raw.get("width")).doubleValue());
+            value.setHeight(((Number) raw.get("height")).doubleValue());
+            exitZone = value;
         }
 
         eventBus.publish(EventNames.SNAPSHOT_RECEIVED, data);
@@ -93,8 +141,10 @@ public class SessionService {
 
     public synchronized Map<String, Object> getSnapshotData() {
         Map<String, Object> snapshot = new HashMap<>();
-        snapshot.put("gameTimer", gameTimer);
+        snapshot.put("elapsedTime", elapsedTime);
         snapshot.put("gameRunning", gameRunning);
+        snapshot.put("roomResetCount", roomResetCount);
+        snapshot.put("roomResetReason", roomResetReason);
 
         List<Map<String, Object>> playerList = new ArrayList<>();
         for (Player p : players.values()) {
@@ -104,45 +154,90 @@ public class SessionService {
             pd.put("color", p.getColor());
             pd.put("x", p.getX());
             pd.put("y", p.getY());
-            pd.put("mass", p.getMass());
+            pd.put("vx", p.getVx());
+            pd.put("vy", p.getVy());
+            pd.put("grounded", p.isGrounded());
+            pd.put("alive", p.isAlive());
+            pd.put("atExit", p.isAtExit());
+            pd.put("targetX", p.getTargetX());
             pd.put("score", p.getScore());
+            pd.put("deaths", p.getDeaths());
+            pd.put("finishOrder", p.getFinishOrder());
             pd.put("connected", p.isConnected());
             pd.put("ready", p.isReady());
             playerList.add(pd);
         }
         snapshot.put("players", playerList);
 
-        List<Map<String, Object>> itemList = new ArrayList<>();
-        for (CollectibleItem item : items) {
-            Map<String, Object> id = new HashMap<>();
-            id.put("id", item.getId());
-            id.put("x", item.getX());
-            id.put("y", item.getY());
-            id.put("points", item.getPoints());
-            id.put("active", item.isActive());
-            itemList.add(id);
+        List<Map<String, Object>> platformList = new ArrayList<>();
+        for (PlatformTile platform : platforms) {
+            Map<String, Object> raw = new HashMap<>();
+            raw.put("id", platform.getId());
+            raw.put("x", platform.getX());
+            raw.put("y", platform.getY());
+            raw.put("width", platform.getWidth());
+            raw.put("height", platform.getHeight());
+            platformList.add(raw);
         }
-        snapshot.put("items", itemList);
+        snapshot.put("platforms", platformList);
 
-        List<Map<String, Object>> zoneList = new ArrayList<>();
-        for (PenaltyZone zone : penaltyZones) {
-            Map<String, Object> zd = new HashMap<>();
-            zd.put("id", zone.getId());
-            zd.put("x", zone.getX());
-            zd.put("y", zone.getY());
-            zd.put("radius", zone.getRadius());
-            zd.put("triggerMass", zone.getTriggerMass());
-            zd.put("burstRatio", zone.getBurstRatio());
-            zoneList.add(zd);
+        List<Map<String, Object>> spawnList = new ArrayList<>();
+        for (double[] spawn : spawnPoints) {
+            Map<String, Object> raw = new HashMap<>();
+            raw.put("x", spawn[0]);
+            raw.put("y", spawn[1]);
+            spawnList.add(raw);
         }
-        snapshot.put("penaltyZones", zoneList);
+        snapshot.put("spawnPoints", spawnList);
+
+        if (buttonSwitch != null) {
+            Map<String, Object> raw = new HashMap<>();
+            raw.put("id", buttonSwitch.getId());
+            raw.put("x", buttonSwitch.getX());
+            raw.put("y", buttonSwitch.getY());
+            raw.put("width", buttonSwitch.getWidth());
+            raw.put("height", buttonSwitch.getHeight());
+            raw.put("pressed", buttonSwitch.isPressed());
+            snapshot.put("buttonSwitch", raw);
+        }
+
+        if (door != null) {
+            Map<String, Object> raw = new HashMap<>();
+            raw.put("id", door.getId());
+            raw.put("x", door.getX());
+            raw.put("y", door.getY());
+            raw.put("width", door.getWidth());
+            raw.put("height", door.getHeight());
+            raw.put("open", door.isOpen());
+            snapshot.put("door", raw);
+        }
+
+        if (exitZone != null) {
+            Map<String, Object> raw = new HashMap<>();
+            raw.put("x", exitZone.getX());
+            raw.put("y", exitZone.getY());
+            raw.put("width", exitZone.getWidth());
+            raw.put("height", exitZone.getHeight());
+            snapshot.put("exitZone", raw);
+        }
 
         return snapshot;
     }
 
     public synchronized void reset() {
-        players.clear(); peerAddresses.clear(); items.clear(); penaltyZones.clear();
-        gameTimer = 0; gameRunning = false; localPlayerId = null; isHost = false;
+        players.clear();
+        peerAddresses.clear();
+        platforms.clear();
+        spawnPoints.clear();
+        buttonSwitch = null;
+        door = null;
+        exitZone = null;
+        roomResetCount = 0;
+        roomResetReason = "";
+        elapsedTime = 0;
+        gameRunning = false;
+        localPlayerId = null;
+        isHost = false;
     }
 
     public synchronized void registerPeerAddress(String playerId, InetSocketAddress address) {
@@ -180,7 +275,15 @@ public class SessionService {
             copy.setColor(player.getColor());
             copy.setX(player.getX());
             copy.setY(player.getY());
-            copy.setMass(player.getMass());
+            copy.setVx(player.getVx());
+            copy.setVy(player.getVy());
+            copy.setGrounded(player.isGrounded());
+            copy.setAlive(player.isAlive());
+            copy.setAtExit(player.isAtExit());
+            copy.setTargetX(player.getTargetX());
+            copy.setScore(player.getScore());
+            copy.setDeaths(player.getDeaths());
+            copy.setFinishOrder(player.getFinishOrder());
             copy.setConnected(player.isConnected());
             copy.setReady(player.isReady());
             snapshot.add(copy);
@@ -188,33 +291,37 @@ public class SessionService {
         return snapshot;
     }
 
-    public synchronized List<CollectibleItem> getItemsSnapshot() {
-        List<CollectibleItem> snapshot = new ArrayList<>();
-        for (CollectibleItem item : items) {
-            CollectibleItem copy = new CollectibleItem();
-            copy.setId(item.getId());
-            copy.setX(item.getX());
-            copy.setY(item.getY());
-            copy.setPoints(item.getPoints());
-            copy.setActive(item.isActive());
-            snapshot.add(copy);
+    public synchronized List<PlatformTile> getPlatformsSnapshot() {
+        List<PlatformTile> snapshot = new ArrayList<>();
+        for (PlatformTile platform : platforms) {
+            snapshot.add(new PlatformTile(platform.getId(), platform.getX(), platform.getY(), platform.getWidth(), platform.getHeight()));
         }
         return snapshot;
     }
 
-    public synchronized List<PenaltyZone> getPenaltyZonesSnapshot() {
-        List<PenaltyZone> snapshot = new ArrayList<>();
-        for (PenaltyZone zone : penaltyZones) {
-            PenaltyZone copy = new PenaltyZone();
-            copy.setId(zone.getId());
-            copy.setX(zone.getX());
-            copy.setY(zone.getY());
-            copy.setRadius(zone.getRadius());
-            copy.setTriggerMass(zone.getTriggerMass());
-            copy.setBurstRatio(zone.getBurstRatio());
-            snapshot.add(copy);
-        }
+    public synchronized List<double[]> getSpawnPointsSnapshot() {
+        List<double[]> snapshot = new ArrayList<>();
+        for (double[] spawn : spawnPoints) snapshot.add(new double[]{spawn[0], spawn[1]});
         return snapshot;
+    }
+
+    public synchronized ButtonSwitch getButtonSwitchSnapshot() {
+        if (buttonSwitch == null) return null;
+        ButtonSwitch copy = new ButtonSwitch(buttonSwitch.getId(), buttonSwitch.getX(), buttonSwitch.getY(), buttonSwitch.getWidth(), buttonSwitch.getHeight());
+        copy.setPressed(buttonSwitch.isPressed());
+        return copy;
+    }
+
+    public synchronized Door getDoorSnapshot() {
+        if (door == null) return null;
+        Door copy = new Door(door.getId(), door.getX(), door.getY(), door.getWidth(), door.getHeight());
+        copy.setOpen(door.isOpen());
+        return copy;
+    }
+
+    public synchronized ExitZone getExitZoneSnapshot() {
+        if (exitZone == null) return null;
+        return new ExitZone(exitZone.getX(), exitZone.getY(), exitZone.getWidth(), exitZone.getHeight());
     }
 
     public String getLocalPlayerId() { return localPlayerId; }
@@ -234,10 +341,20 @@ public class SessionService {
     public int getExpectedPlayers() { return expectedPlayers; }
     public void setExpectedPlayers(int v) { this.expectedPlayers = v; }
     public Map<String, Player> getPlayers() { return players; }
-    public List<CollectibleItem> getItems() { return items; }
-    public List<PenaltyZone> getPenaltyZones() { return penaltyZones; }
-    public synchronized double getGameTimer() { return gameTimer; }
-    public synchronized void setGameTimer(double v) { this.gameTimer = v; }
+    public List<PlatformTile> getPlatforms() { return platforms; }
+    public List<double[]> getSpawnPoints() { return spawnPoints; }
+    public ButtonSwitch getButtonSwitch() { return buttonSwitch; }
+    public void setButtonSwitch(ButtonSwitch buttonSwitch) { this.buttonSwitch = buttonSwitch; }
+    public Door getDoor() { return door; }
+    public void setDoor(Door door) { this.door = door; }
+    public ExitZone getExitZone() { return exitZone; }
+    public void setExitZone(ExitZone exitZone) { this.exitZone = exitZone; }
+    public synchronized int getRoomResetCount() { return roomResetCount; }
+    public synchronized void setRoomResetCount(int roomResetCount) { this.roomResetCount = roomResetCount; }
+    public synchronized String getRoomResetReason() { return roomResetReason; }
+    public synchronized void setRoomResetReason(String roomResetReason) { this.roomResetReason = roomResetReason; }
+    public synchronized double getElapsedTime() { return elapsedTime; }
+    public synchronized void setElapsedTime(double elapsedTime) { this.elapsedTime = elapsedTime; }
     public synchronized boolean isGameRunning() { return gameRunning; }
-    public synchronized void setGameRunning(boolean v) { this.gameRunning = v; }
+    public synchronized void setGameRunning(boolean gameRunning) { this.gameRunning = gameRunning; }
 }

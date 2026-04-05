@@ -3,34 +3,29 @@ package com.dino.presentation.components;
 import com.dino.application.services.EventBus;
 import com.dino.domain.events.EventNames;
 
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 
 public class EventLogObserver {
-    private final Deque<String> entries = new ArrayDeque<>();
     private static final int MAX = 5;
+    private final Deque<String> entries = new ArrayDeque<>();
 
     public EventLogObserver(EventBus eventBus) {
-        eventBus.subscribe(EventNames.ITEM_COLLECTED, e -> {
-            String player = (String) e.getOrDefault("playerId", "?");
-            int pts = e.containsKey("points") ? ((Number) e.get("points")).intValue() : 0;
-            add("+" + pts + " masa  " + player + " comio pellet");
+        eventBus.subscribe(EventNames.BUTTON_STATE_CHANGED, e -> add(Boolean.TRUE.equals(e.get("pressed"))
+            ? "Boton activado"
+            : "Boton liberado"));
+        eventBus.subscribe(EventNames.PLAYER_DIED, e -> add("Caida de " + e.getOrDefault("playerId", "?")));
+        eventBus.subscribe(EventNames.PLAYER_REACHED_EXIT, e -> add(
+            e.getOrDefault("playerId", "?") + " llego #" + e.getOrDefault("finishOrder", "?")));
+        eventBus.subscribe(EventNames.SCORE_CHANGED, e -> {
+            int delta = ((Number) e.getOrDefault("delta", 0)).intValue();
+            String sign = delta >= 0 ? "+" : "";
+            add(e.getOrDefault("playerId", "?") + " " + sign + delta + " pts");
         });
-        eventBus.subscribe(EventNames.PLAYER_CONSUMED, e -> {
-            String predator = (String) e.getOrDefault("playerId", "?");
-            String prey = (String) e.getOrDefault("targetId", "?");
-            int gained = e.containsKey("gainedMass") ? (int) Math.round(((Number) e.get("gainedMass")).doubleValue()) : 0;
-            add(predator + " devoro a " + prey + " +" + gained);
-        });
-        eventBus.subscribe(EventNames.VIRUS_TRIGGERED, e -> {
-            String player = (String) e.getOrDefault("playerId", "?");
-            int lost = e.containsKey("lostMass") ? (int) Math.round(((Number) e.get("lostMass")).doubleValue()) : 0;
-            add("Virus golpea a " + player + " -" + lost);
-        });
-        eventBus.subscribe(EventNames.SCORE_UPDATED, e -> {
-            String player = (String) e.getOrDefault("playerId", "?");
-            int score = e.containsKey("score") ? ((Number) e.get("score")).intValue() : 0;
-            add(player + " → " + score + " masa");
-        });
+        eventBus.subscribe(EventNames.ROOM_RESET, e -> add("Sala reiniciada"));
+        eventBus.subscribe(EventNames.LEVEL_COMPLETED, e -> add("Todos llegaron a la salida"));
     }
 
     private void add(String msg) {

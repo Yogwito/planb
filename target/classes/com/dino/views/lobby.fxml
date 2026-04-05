@@ -8,13 +8,13 @@
       fx:controller="com.dino.presentation.controllers.LobbyController"
       alignment="CENTER"
       spacing="24"
-      style="-fx-background-color: #1a1a2e; -fx-padding: 60;">
+      style="-fx-background-color: #0f1724; -fx-padding: 60;">
 
     <Label text="SALA DE ESPERA"
-           style="-fx-font-size: 42px; -fx-font-weight: bold; -fx-text-fill: white; -fx-font-family: 'Arial';"/>
+           style="-fx-font-size: 42px; -fx-font-weight: bold; -fx-text-fill: white;"/>
 
-    <Label text="Esperando jugadores..."
-           style="-fx-font-size: 14px; -fx-text-fill: #e94560; -fx-font-style: italic;"/>
+    <Label text="Todos deben entrar juntos a la salida"
+           style="-fx-font-size: 14px; -fx-text-fill: #4cc9f0; -fx-font-style: italic;"/>
 
     <VBox spacing="8" maxWidth="500" style="-fx-padding: 10 0;">
         <Label text="Jugadores conectados:" style="-fx-text-fill: #aaaacc; -fx-font-size: 13px;"/>
@@ -28,16 +28,16 @@
         <Button text="LISTO"
                 fx:id="readyBtn"
                 onAction="#onListo"
-                style="-fx-background-color: #e94560; -fx-text-fill: white; -fx-font-weight: bold;
+                style="-fx-background-color: #4cc9f0; -fx-text-fill: #0f1724; -fx-font-weight: bold;
                        -fx-font-size: 15px; -fx-padding: 12 40; -fx-background-radius: 6; -fx-cursor: hand;"/>
 
         <Button text="INICIAR PARTIDA"
                 fx:id="startBtn"
                 onAction="#onIniciarPartida"
                 visible="false"
-                style="-fx-background-color: #0f3460; -fx-text-fill: white; -fx-font-weight: bold;
+                style="-fx-background-color: #80ed99; -fx-text-fill: #0f1724; -fx-font-weight: bold;
                        -fx-font-size: 15px; -fx-padding: 12 40; -fx-background-radius: 6; -fx-cursor: hand;
-                       -fx-border-color: #e94560; -fx-border-radius: 6;"/>
+                       -fx-border-color: #4cc9f0; -fx-border-radius: 6;"/>
     </HBox>
 
     <Label fx:id="statusLabel" text=""

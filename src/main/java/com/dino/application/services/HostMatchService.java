@@ -230,19 +230,27 @@ public class HostMatchService {
             }
 
             a.setX(a.getX() + nx * pull * 0.5);
-            a.setY(a.getY() + ny * pull * 0.18);
+            a.setY(a.getY() + ny * pull * 0.08);
             b.setX(b.getX() - nx * pull * 0.5);
-            b.setY(b.getY() - ny * pull * 0.18);
+            b.setY(b.getY() - ny * pull * 0.08);
 
             clampPlayer(a);
+            resolveHorizontalCollisions(a);
+            resolveVerticalCollisions(a);
             clampPlayer(b);
+            resolveHorizontalCollisions(b);
+            resolveVerticalCollisions(b);
 
             if (distance > GameConfig.THREAD_HARD_LIMIT) {
                 double excess = distance - GameConfig.THREAD_HARD_LIMIT;
                 a.setX(a.getX() + nx * excess * 0.5);
                 b.setX(b.getX() - nx * excess * 0.5);
                 clampPlayer(a);
+                resolveHorizontalCollisions(a);
+                resolveVerticalCollisions(a);
                 clampPlayer(b);
+                resolveHorizontalCollisions(b);
+                resolveVerticalCollisions(b);
             }
         }
     }
@@ -379,7 +387,6 @@ public class HostMatchService {
         sessionService.getPlatforms().clear();
         sessionService.getSpawnPoints().clear();
 
-        sessionService.getPlatforms().add(new PlatformTile("ground", 0, 820, GameConfig.LEVEL_WIDTH, 80));
         switch (levelIndex) {
             case 0 -> loadLevelOne();
             case 1 -> loadLevelTwo();
@@ -397,47 +404,60 @@ public class HostMatchService {
     }
 
     private void loadLevelOne() {
-        sessionService.getPlatforms().add(new PlatformTile("spawn_step", 150, 730, 220, 24));
-        sessionService.getPlatforms().add(new PlatformTile("button_ledge", 430, 690, 220, 24));
-        sessionService.getPlatforms().add(new PlatformTile("bridge_step", 710, 650, 200, 24));
-        sessionService.getPlatforms().add(new PlatformTile("door_ledge", 960, 610, 220, 24));
-        sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1220, 570, 220, 24));
+        // Tutorial: one clear 200px gap near the start, then safe 30px transitions, gentle 38px rise per step
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",  80,   750, 240, 24));
+        // GAP 200px (320→520) — teaches falling
+        sessionService.getPlatforms().add(new PlatformTile("step_a",   520,  712, 220, 24));
+        sessionService.getPlatforms().add(new PlatformTile("step_b",   770,  674, 240, 24)); // button here
+        sessionService.getPlatforms().add(new PlatformTile("step_c",   1040, 636, 230, 24));
+        sessionService.getPlatforms().add(new PlatformTile("door_p",   1300, 598, 220, 24));
+        sessionService.getPlatforms().add(new PlatformTile("exit_p",   1550, 560, 200, 24));
 
-        addDefaultSpawns(120, 678);
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 500, 674, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
-        sessionService.setDoor(new Door("door", 1042, 462, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
-        sessionService.setExitZone(new ExitZone(1265, 460, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        addDefaultSpawns(100, 698); // 750 - 52
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 850, 658, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT)); // step_b center; y=674-16
+        sessionService.setDoor(new Door("door", 1370, 450, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));                     // door_p; y=598-148
+        sessionService.setExitZone(new ExitZone(1560, 450, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));                     // exit_p; y=560-110
     }
 
     private void loadLevelTwo() {
-        sessionService.getPlatforms().add(new PlatformTile("spawn_step", 140, 730, 190, 24));
-        sessionService.getPlatforms().add(new PlatformTile("mid_one", 360, 690, 170, 24));
-        sessionService.getPlatforms().add(new PlatformTile("button_ledge", 590, 650, 180, 24));
-        sessionService.getPlatforms().add(new PlatformTile("mid_two", 850, 610, 180, 24));
-        sessionService.getPlatforms().add(new PlatformTile("door_ledge", 1120, 570, 220, 24));
-        sessionService.getPlatforms().add(new PlatformTile("mid_three", 1380, 530, 170, 24));
-        sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1570, 490, 190, 24));
+        // Zigzag: height goes 720→760(down)→700(up)→645(up)→580(up)→640(down)→600
+        // Two big gaps (GAP1=220px, GAP2=190px) + one medium gap (120px before door)
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   720, 200, 24));
+        // GAP1 220px (280→500)
+        sessionService.getPlatforms().add(new PlatformTile("drop_a",    500,  760, 160, 24)); // drops 40px
+        sessionService.getPlatforms().add(new PlatformTile("rise_b",    690,  700, 160, 24)); // rises 60px; 30px from drop_a
+        // GAP2 190px (850→1040)
+        sessionService.getPlatforms().add(new PlatformTile("mid_c",     1040, 645, 140, 24)); // rises 55px
+        sessionService.getPlatforms().add(new PlatformTile("button_p",  1210, 580, 110, 24)); // rises 65px; 30px from mid_c
+        // 120px gap (1320→1440) — requires jump, can fall
+        sessionService.getPlatforms().add(new PlatformTile("door_p",    1440, 640, 180, 24)); // drops 60px
+        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1650, 600, 130, 24)); // rises 40px; 30px from door_p
 
-        addDefaultSpawns(110, 678);
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 645, 634, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
-        sessionService.setDoor(new Door("door", 1212, 422, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
-        sessionService.setExitZone(new ExitZone(1605, 380, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        addDefaultSpawns(100, 668); // 720 - 52
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 1225, 564, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT)); // button_p center; y=580-16
+        sessionService.setDoor(new Door("door", 1490, 492, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));                       // door_p; y=640-148
+        sessionService.setExitZone(new ExitZone(1655, 490, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));                       // exit_p; y=600-110
     }
 
     private void loadLevelThree() {
-        sessionService.getPlatforms().add(new PlatformTile("spawn_step", 140, 730, 180, 24));
-        sessionService.getPlatforms().add(new PlatformTile("mid_one", 340, 700, 170, 24));
-        sessionService.getPlatforms().add(new PlatformTile("button_ledge", 560, 665, 190, 24));
-        sessionService.getPlatforms().add(new PlatformTile("mid_two", 800, 625, 180, 24));
-        sessionService.getPlatforms().add(new PlatformTile("mid_three", 1010, 585, 170, 24));
-        sessionService.getPlatforms().add(new PlatformTile("door_ledge", 1235, 545, 190, 24));
-        sessionService.getPlatforms().add(new PlatformTile("mid_four", 1470, 505, 170, 24));
-        sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1660, 465, 170, 24));
+        // Caos: small platforms (80-140px), 3 big gaps, button barely reachable (9px apex margin),
+        // exit is LOWER than door (requires descending at the end)
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   700, 140, 24));
+        // GAP1 200px (220→420)
+        sessionService.getPlatforms().add(new PlatformTile("stone_a",   420,  655,  90, 24)); // rises 45px
+        sessionService.getPlatforms().add(new PlatformTile("stone_b",   540,  720,  80, 24)); // drops 65px; 30px from stone_a
+        // GAP2 200px (620→820) — button isolated above
+        sessionService.getPlatforms().add(new PlatformTile("button_p",  820,  615, 100, 24)); // stone_b→button: apex_feet=606, plat=615 (9px margin)
+        // GAP3 180px (920→1100)
+        sessionService.getPlatforms().add(new PlatformTile("stone_c",   1100, 650,  90, 24)); // drops 35px from button
+        sessionService.getPlatforms().add(new PlatformTile("stone_d",   1220, 700,  80, 24)); // drops 50px; 30px from stone_c
+        sessionService.getPlatforms().add(new PlatformTile("door_p",    1330, 645, 120, 24)); // rises 55px; 30px from stone_d
+        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1480, 720, 130, 24)); // drops 75px — exit is LOWER than door
 
-        addDefaultSpawns(120, 678);
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 615, 649, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
-        sessionService.setDoor(new Door("door", 1312, 397, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
-        sessionService.setExitZone(new ExitZone(1695, 355, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        addDefaultSpawns(100, 648); // 700 - 52
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 830, 599, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT)); // button_p center; y=615-16
+        sessionService.setDoor(new Door("door", 1355, 497, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));     // door_p; y=645-148
+        sessionService.setExitZone(new ExitZone(1485, 610, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));     // exit_p; y=720-110
     }
 
     private void addDefaultSpawns(double baseX, double baseY) {

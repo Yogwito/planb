@@ -26,11 +26,11 @@ public class SoundManager {
     }
 
     private void playCartoonBlip(int startFrequency, int endFrequency, int durationMs, double volume) {
-        Thread.ofVirtual().start(() -> playBuffer(buildGlideBuffer(startFrequency, endFrequency, durationMs, volume, true), durationMs));
+        Thread.ofPlatform().daemon(true).start(() -> playBuffer(buildGlideBuffer(startFrequency, endFrequency, durationMs, volume, true), durationMs));
     }
 
     private void playCartoonChord(int[] frequencies, int durationMs, double volume, double vibratoDepth) {
-        Thread.ofVirtual().start(() -> playBuffer(buildChordBuffer(frequencies, durationMs, volume, vibratoDepth), durationMs));
+        Thread.ofPlatform().daemon(true).start(() -> playBuffer(buildChordBuffer(frequencies, durationMs, volume, vibratoDepth), durationMs));
     }
 
     private byte[] buildGlideBuffer(int startFrequency, int endFrequency, int durationMs, double volume, boolean bouncyEnvelope) {
@@ -90,16 +90,25 @@ public class SoundManager {
     }
 
     private void playBuffer(byte[] buffer, int durationMs) {
+        if (AudioSystem.getMixerInfo().length == 0) return;
+        AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
+        DataLine.Info info = new DataLine.Info(Clip.class, format);
+        if (!AudioSystem.isLineSupported(info)) return;
+        Clip clip;
         try {
-            AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
-            DataLine.Info info = new DataLine.Info(Clip.class, format);
-            if (!AudioSystem.isLineSupported(info)) return;
-            Clip clip = (Clip) AudioSystem.getLine(info);
+            clip = (Clip) AudioSystem.getLine(info);
             clip.open(format, buffer, 0, buffer.length);
+        } catch (Exception e) {
+            System.err.println("[Sound] " + e.getMessage());
+            return;
+        }
+        try {
             clip.start();
             Thread.sleep(durationMs + 50L);
+        } catch (Exception e) {
+            System.err.println("[Sound] " + e.getMessage());
+        } finally {
             clip.close();
-        } catch (Exception ignored) {
         }
     }
 }

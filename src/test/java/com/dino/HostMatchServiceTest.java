@@ -22,8 +22,8 @@ class HostMatchServiceTest {
         sessionService.setGameRunning(true);
         hostMatchService.initWorld();
 
-        host.setX(545);
-        host.setY(630);
+        host.setX(870); // within button (850..930) on step_b (y=674)
+        host.setY(624); // bottom=676 → resolves onto step_b, then intersects button at y=658
 
         hostMatchService.tick(0.016);
 
@@ -68,10 +68,10 @@ class HostMatchServiceTest {
         sessionService.setGameRunning(true);
         hostMatchService.initWorld();
 
-        host.setX(1275);
-        host.setY(470);
-        guest.setX(1315);
-        guest.setY(470);
+        host.setX(1580);  // within exitZone (1560..1680) on exit_p (y=560)
+        host.setY(510);   // bottom=562 → resolves onto exit_p, then inside exitZone y=450..560
+        guest.setX(1620);
+        guest.setY(510);
 
         hostMatchService.tick(0.016);
 

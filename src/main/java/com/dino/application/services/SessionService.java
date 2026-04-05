@@ -35,6 +35,7 @@ public class SessionService {
     private int totalLevels;
     private double elapsedTime;
     private boolean gameRunning;
+    private volatile long lastSnapshotSeq = -1;
 
     public SessionService(EventBus eventBus) {
         this.eventBus = eventBus;
@@ -49,6 +50,11 @@ public class SessionService {
 
     @SuppressWarnings("unchecked")
     public synchronized void updateFromSnapshot(Map<String, Object> data) {
+        if (data.containsKey("seq")) {
+            long seq = ((Number) data.get("seq")).longValue();
+            if (seq <= lastSnapshotSeq) return;
+            lastSnapshotSeq = seq;
+        }
         if (data.containsKey("elapsedTime")) elapsedTime = ((Number) data.get("elapsedTime")).doubleValue();
         if (data.containsKey("gameRunning")) gameRunning = (Boolean) data.get("gameRunning");
         if (data.containsKey("roomResetCount")) roomResetCount = ((Number) data.get("roomResetCount")).intValue();
@@ -146,6 +152,7 @@ public class SessionService {
 
     public synchronized Map<String, Object> getSnapshotData() {
         Map<String, Object> snapshot = new HashMap<>();
+        snapshot.put("seq", System.nanoTime() / 1_000_000);
         snapshot.put("elapsedTime", elapsedTime);
         snapshot.put("gameRunning", gameRunning);
         snapshot.put("roomResetCount", roomResetCount);

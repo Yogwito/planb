@@ -403,7 +403,7 @@ public class HostMatchService {
         sessionService.getPlatforms().add(new PlatformTile("door_ledge", 960, 610, 220, 24));
         sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1220, 570, 220, 24));
 
-        addDefaultSpawns(120, 740);
+        addDefaultSpawns(120, 678);
         sessionService.setButtonSwitch(new ButtonSwitch("button", 500, 674, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
         sessionService.setDoor(new Door("door", 1042, 462, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
         sessionService.setExitZone(new ExitZone(1265, 460, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
@@ -418,7 +418,7 @@ public class HostMatchService {
         sessionService.getPlatforms().add(new PlatformTile("mid_three", 1380, 530, 170, 24));
         sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1570, 490, 190, 24));
 
-        addDefaultSpawns(110, 740);
+        addDefaultSpawns(110, 678);
         sessionService.setButtonSwitch(new ButtonSwitch("button", 645, 634, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
         sessionService.setDoor(new Door("door", 1212, 422, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
         sessionService.setExitZone(new ExitZone(1605, 380, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
@@ -434,7 +434,7 @@ public class HostMatchService {
         sessionService.getPlatforms().add(new PlatformTile("mid_four", 1470, 505, 170, 24));
         sessionService.getPlatforms().add(new PlatformTile("exit_ledge", 1660, 465, 170, 24));
 
-        addDefaultSpawns(120, 740);
+        addDefaultSpawns(120, 678);
         sessionService.setButtonSwitch(new ButtonSwitch("button", 615, 649, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
         sessionService.setDoor(new Door("door", 1312, 397, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
         sessionService.setExitZone(new ExitZone(1695, 355, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));

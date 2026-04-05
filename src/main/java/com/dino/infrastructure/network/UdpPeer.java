@@ -10,6 +10,7 @@ public class UdpPeer {
     private DatagramSocket socket;
     private final ObjectMapper mapper = new ObjectMapper();
     private static final int BUFFER_SIZE = 65535;
+    private final byte[] receiveBuffer = new byte[BUFFER_SIZE];
 
     public void bind(String ip, int port) throws IOException {
         if (ip == null || ip.isBlank() || ip.equals("0.0.0.0")) {
@@ -39,8 +40,7 @@ public class UdpPeer {
     public Optional<Map.Entry<Map<String, Object>, InetSocketAddress>> receive() {
         if (socket == null || socket.isClosed()) return Optional.empty();
         try {
-            byte[] buffer = new byte[BUFFER_SIZE];
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+            DatagramPacket packet = new DatagramPacket(receiveBuffer, receiveBuffer.length);
             socket.receive(packet);
             byte[] data = Arrays.copyOf(packet.getData(), packet.getLength());
             Map<String, Object> msg = mapper.readValue(data, Map.class);

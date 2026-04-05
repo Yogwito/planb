@@ -300,6 +300,15 @@ public class GameController implements Initializable {
             gc.fillText("SALIDA", x + 22, y + 26);
         }
 
+        double groundScreenY = worldToScreenY(800, scaleY);
+        double groundScreenX = worldToScreenX(0, scaleX);
+        double groundScreenW = GameConfig.LEVEL_WIDTH * scaleX;
+        gc.setFill(Color.web("#1a1a2e"));
+        gc.fillRect(groundScreenX, groundScreenY, groundScreenW, 100 * scaleY);
+        gc.setStroke(Color.web("#4a4a6a"));
+        gc.setLineWidth(3);
+        gc.strokeLine(groundScreenX, groundScreenY, groundScreenX + groundScreenW, groundScreenY);
+
         for (PlatformTile platform : MainApp.sessionService.getPlatformsSnapshot()) {
             double x = worldToScreenX(platform.getX(), scaleX);
             double y = worldToScreenY(platform.getY(), scaleY);
@@ -349,12 +358,17 @@ public class GameController implements Initializable {
 
         updateRenderStates(players, 1.0 / Math.max(1, GameConfig.FPS));
 
-        gc.setStroke(Color.web("#4cc9f044"));
         gc.setLineWidth(8);
         for (int i = 0; i < players.size() - 1; i++) {
             RenderState a = renderStates.get(players.get(i).getId());
             RenderState b = renderStates.get(players.get(i + 1).getId());
             if (a == null || b == null) continue;
+            double ddx = b.x - a.x;
+            double ddy = b.y - a.y;
+            double dist = Math.sqrt(ddx * ddx + ddy * ddy);
+            double tension = Math.max(0.0, Math.min(1.0, (dist - GameConfig.THREAD_MAX_DISTANCE * 0.6) / (GameConfig.THREAD_MAX_DISTANCE * 0.4)));
+            Color glowColor = Color.web("#4cc9f0").interpolate(Color.web("#ef476f"), tension);
+            gc.setStroke(glowColor.deriveColor(0, 1, 1, 0.27));
             double midX = (a.x + b.x) / 2.0;
             double sag = Math.min(16, Math.abs(b.x - a.x) * 0.05);
             gc.beginPath();
@@ -363,12 +377,17 @@ public class GameController implements Initializable {
                 worldToScreenX(b.centerX(players.get(i + 1).getWidth()), scaleX), worldToScreenY(b.centerY(players.get(i + 1).getHeight()), scaleY));
             gc.stroke();
         }
-        gc.setStroke(Color.web("#80ed99cc"));
         gc.setLineWidth(3);
         for (int i = 0; i < players.size() - 1; i++) {
             RenderState a = renderStates.get(players.get(i).getId());
             RenderState b = renderStates.get(players.get(i + 1).getId());
             if (a == null || b == null) continue;
+            double ddx = b.x - a.x;
+            double ddy = b.y - a.y;
+            double dist = Math.sqrt(ddx * ddx + ddy * ddy);
+            double tension = Math.max(0.0, Math.min(1.0, (dist - GameConfig.THREAD_MAX_DISTANCE * 0.6) / (GameConfig.THREAD_MAX_DISTANCE * 0.4)));
+            Color threadColor = Color.web("#80ed99").interpolate(Color.web("#ef476f"), tension);
+            gc.setStroke(threadColor.deriveColor(0, 1, 1, 0.8));
             double midX = (a.x + b.x) / 2.0;
             double sag = Math.min(16, Math.abs(b.x - a.x) * 0.05);
             gc.beginPath();
@@ -377,6 +396,24 @@ public class GameController implements Initializable {
                 worldToScreenX(b.centerX(players.get(i + 1).getWidth()), scaleX), worldToScreenY(b.centerY(players.get(i + 1).getHeight()), scaleY));
             gc.stroke();
         }
+
+        List<PlatformTile> platformsForShadow = MainApp.sessionService.getPlatformsSnapshot();
+        gc.setStroke(Color.web("#ffffff33"));
+        gc.setLineWidth(1);
+        gc.setLineDashes(4, 6);
+        for (Player player : players) {
+            RenderState state = renderStates.get(player.getId());
+            if (state == null) continue;
+            double shadowCenterX = worldToScreenX(state.centerX(player.getWidth()), scaleX);
+            double shadowTopY = worldToScreenY(state.y + player.getHeight(), scaleY);
+            double floorWorldY = 800;
+            for (PlatformTile plat : platformsForShadow) {
+                if (plat.getY() > state.y && plat.getY() < floorWorldY) floorWorldY = plat.getY();
+            }
+            double shadowBottomY = worldToScreenY(floorWorldY, scaleY);
+            gc.strokeLine(shadowCenterX, shadowTopY, shadowCenterX, shadowBottomY);
+        }
+        gc.setLineDashes(null);
 
         Player localPlayer = getLocalPlayerSnapshot();
         for (Player player : players) {
@@ -422,11 +459,19 @@ public class GameController implements Initializable {
 
             if (localPlayer != null && player.getId().equals(localPlayer.getId())) {
                 double targetX = worldToScreenX(player.getTargetX(), scaleX);
+                double lineY = adjustedY + renderH + 6;
                 gc.setStroke(Color.web("#ffffff99"));
                 gc.setLineWidth(2);
-                gc.strokeLine(worldToScreenX(state.centerX(player.getWidth()), scaleX), adjustedY + renderH + 6, targetX, adjustedY + renderH + 6);
+                gc.strokeLine(worldToScreenX(state.centerX(player.getWidth()), scaleX), lineY, targetX, lineY);
                 gc.setFill(Color.web("#ffffffcc"));
                 gc.fillOval(targetX - 4, adjustedY + renderH + 2, 8, 8);
+                double dxTarget = player.getTargetX() - state.centerX(player.getWidth());
+                if (Math.abs(dxTarget) > GameConfig.TARGET_REACHED_TOLERANCE) {
+                    double dir = Math.signum(dxTarget);
+                    double tipX = targetX + dir * 14;
+                    double baseX = targetX + dir * 4;
+                    gc.fillPolygon(new double[]{tipX, baseX, baseX}, new double[]{lineY, lineY - 8, lineY + 8}, 3);
+                }
             }
         }
 
@@ -707,8 +752,9 @@ public class GameController implements Initializable {
     }
 
     private String connectionText() {
-        if (MainApp.sessionService.isHost()) return "UDP host estable · 24 Hz";
+        if (MainApp.sessionService.isHost()) return "UDP host estable · 30 Hz";
         long ms = Math.round(timeSinceLastSnapshot * 1000.0);
+        if (timeSinceLastSnapshot > 3.0) return "UDP: sin señal — reconectando...";
         if (timeSinceLastSnapshot < GameConfig.SNAPSHOT_STALE_WARNING_SECONDS) return "UDP estable · " + ms + " ms";
         if (timeSinceLastSnapshot < GameConfig.SNAPSHOT_STALE_WARNING_SECONDS * 2.0) return "UDP con retraso · " + ms + " ms";
         return "UDP inestable · " + ms + " ms";

@@ -6,6 +6,7 @@ import com.dino.domain.entities.Door;
 import com.dino.domain.entities.ExitZone;
 import com.dino.domain.entities.PlatformTile;
 import com.dino.domain.entities.Player;
+import com.dino.domain.entities.PushBlock;
 import com.dino.domain.events.EventNames;
 
 import java.net.InetSocketAddress;
@@ -30,6 +31,7 @@ public class SessionService {
     private ButtonSwitch buttonSwitch;
     private Door door;
     private ExitZone exitZone;
+    private final List<PushBlock> pushBlocks = new ArrayList<>();
     private int roomResetCount;
     private String roomResetReason = "";
     private int currentLevelIndex;
@@ -37,7 +39,9 @@ public class SessionService {
     private double elapsedTime;
     private boolean gameRunning;
     private volatile long lastSnapshotSeq = -1;
+    private long nextSnapshotSeq = 0;
     private final List<CollectibleItem> coins = new ArrayList<>();
+    private final Map<String, Long> peerLastSeenMillis = new LinkedHashMap<>();
 
     public SessionService(EventBus eventBus) {
         this.eventBus = eventBus;
@@ -48,6 +52,7 @@ public class SessionService {
     public synchronized void removePlayer(String playerId) {
         players.remove(playerId);
         peerAddresses.remove(playerId);
+        peerLastSeenMillis.remove(playerId);
     }
 
     @SuppressWarnings("unchecked")
@@ -149,6 +154,23 @@ public class SessionService {
             exitZone = value;
         }
 
+        if (data.containsKey("pushBlocks")) {
+            pushBlocks.clear();
+            for (Map<String, Object> raw : (List<Map<String, Object>>) data.get("pushBlocks")) {
+                PushBlock block = new PushBlock();
+                block.setId((String) raw.get("id"));
+                block.setX(((Number) raw.get("x")).doubleValue());
+                block.setY(((Number) raw.get("y")).doubleValue());
+                block.setWidth(((Number) raw.get("width")).doubleValue());
+                block.setHeight(((Number) raw.get("height")).doubleValue());
+                block.setVx(((Number) raw.getOrDefault("vx", 0)).doubleValue());
+                block.setVy(((Number) raw.getOrDefault("vy", 0)).doubleValue());
+                block.setHomeX(((Number) raw.getOrDefault("homeX", block.getX())).doubleValue());
+                block.setHomeY(((Number) raw.getOrDefault("homeY", block.getY())).doubleValue());
+                pushBlocks.add(block);
+            }
+        }
+
         if (data.containsKey("coins")) {
             coins.clear();
             for (Map<String, Object> raw : (List<Map<String, Object>>) data.get("coins")) {
@@ -168,7 +190,7 @@ public class SessionService {
 
     public synchronized Map<String, Object> getSnapshotData() {
         Map<String, Object> snapshot = new HashMap<>();
-        snapshot.put("seq", (long)(getElapsedTime() * 1000));
+        snapshot.put("seq", ++nextSnapshotSeq);
         snapshot.put("elapsedTime", elapsedTime);
         snapshot.put("gameRunning", gameRunning);
         snapshot.put("roomResetCount", roomResetCount);
@@ -252,6 +274,22 @@ public class SessionService {
             snapshot.put("exitZone", raw);
         }
 
+        List<Map<String, Object>> blockList = new ArrayList<>();
+        for (PushBlock block : pushBlocks) {
+            Map<String, Object> raw = new HashMap<>();
+            raw.put("id", block.getId());
+            raw.put("x", block.getX());
+            raw.put("y", block.getY());
+            raw.put("width", block.getWidth());
+            raw.put("height", block.getHeight());
+            raw.put("vx", block.getVx());
+            raw.put("vy", block.getVy());
+            raw.put("homeX", block.getHomeX());
+            raw.put("homeY", block.getHomeY());
+            blockList.add(raw);
+        }
+        snapshot.put("pushBlocks", blockList);
+
         List<Map<String, Object>> coinList = new ArrayList<>();
         for (CollectibleItem c : coins) {
             Map<String, Object> raw = new HashMap<>();
@@ -284,6 +322,7 @@ public class SessionService {
         peerAddresses.clear();
         platforms.clear();
         spawnPoints.clear();
+        pushBlocks.clear();
         coins.clear();
         buttonSwitch = null;
         door = null;
@@ -294,12 +333,18 @@ public class SessionService {
         totalLevels = 0;
         elapsedTime = 0;
         gameRunning = false;
+        lastSnapshotSeq = -1;
+        nextSnapshotSeq = 0;
         localPlayerId = null;
         isHost = false;
+        peerLastSeenMillis.clear();
     }
 
     public synchronized void registerPeerAddress(String playerId, InetSocketAddress address) {
-        if (playerId != null && address != null) peerAddresses.put(playerId, address);
+        if (playerId != null && address != null) {
+            peerAddresses.put(playerId, address);
+            peerLastSeenMillis.put(playerId, System.currentTimeMillis());
+        }
     }
 
     public synchronized List<InetSocketAddress> getRemotePeerAddresses() {
@@ -318,10 +363,46 @@ public class SessionService {
     public synchronized void markPlayerConnected(String playerId, boolean connected) {
         Player player = players.get(playerId);
         if (player != null) player.setConnected(connected);
+        if (connected) {
+            peerLastSeenMillis.put(playerId, System.currentTimeMillis());
+        } else {
+            peerLastSeenMillis.remove(playerId);
+        }
     }
 
     public synchronized void removePeerAddress(String playerId) {
-        if (playerId != null) peerAddresses.remove(playerId);
+        if (playerId != null) {
+            peerAddresses.remove(playerId);
+            peerLastSeenMillis.remove(playerId);
+        }
+    }
+
+    public synchronized void markPeerSeen(String playerId) {
+        if (playerId != null) peerLastSeenMillis.put(playerId, System.currentTimeMillis());
+    }
+
+    public synchronized Long getPeerAgeMillis(String playerId) {
+        Long lastSeen = peerLastSeenMillis.get(playerId);
+        if (lastSeen == null) return null;
+        return Math.max(0L, System.currentTimeMillis() - lastSeen);
+    }
+
+    public synchronized List<String> expireInactivePeers(long timeoutMillis) {
+        long now = System.currentTimeMillis();
+        List<String> expired = new ArrayList<>();
+        for (Player player : players.values()) {
+            if (!player.isConnected()) continue;
+            if (Objects.equals(player.getId(), localPlayerId) && isHost) continue;
+            Long lastSeen = peerLastSeenMillis.get(player.getId());
+            if (lastSeen == null) continue;
+            if (now - lastSeen > timeoutMillis) {
+                player.setConnected(false);
+                peerAddresses.remove(player.getId());
+                expired.add(player.getId());
+            }
+        }
+        expired.forEach(peerLastSeenMillis::remove);
+        return expired;
     }
 
     public synchronized List<Player> getPlayersSnapshot() {
@@ -383,6 +464,19 @@ public class SessionService {
         return new ExitZone(exitZone.getX(), exitZone.getY(), exitZone.getWidth(), exitZone.getHeight());
     }
 
+    public synchronized List<PushBlock> getPushBlocksSnapshot() {
+        List<PushBlock> snapshot = new ArrayList<>();
+        for (PushBlock block : pushBlocks) {
+            PushBlock copy = new PushBlock(block.getId(), block.getX(), block.getY(), block.getWidth(), block.getHeight());
+            copy.setVx(block.getVx());
+            copy.setVy(block.getVy());
+            copy.setHomeX(block.getHomeX());
+            copy.setHomeY(block.getHomeY());
+            snapshot.add(copy);
+        }
+        return snapshot;
+    }
+
     public String getLocalPlayerId() { return localPlayerId; }
     public void setLocalPlayerId(String v) { this.localPlayerId = v; }
     public String getLocalIp() { return localIp; }
@@ -408,6 +502,7 @@ public class SessionService {
     public void setDoor(Door door) { this.door = door; }
     public ExitZone getExitZone() { return exitZone; }
     public void setExitZone(ExitZone exitZone) { this.exitZone = exitZone; }
+    public List<PushBlock> getPushBlocks() { return pushBlocks; }
     public synchronized int getRoomResetCount() { return roomResetCount; }
     public synchronized void setRoomResetCount(int roomResetCount) { this.roomResetCount = roomResetCount; }
     public synchronized String getRoomResetReason() { return roomResetReason; }

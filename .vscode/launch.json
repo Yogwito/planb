@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "MainApp",
+      "request": "launch",
+      "mainClass": "com.dino.MainApp",
+      "projectName": "dino-arena-udp"
+    },
+    {
+      "type": "java",
+      "name": "Run Threaded with Maven",
+      "request": "launch",
+      "mainClass": "com.dino.MainApp",
+      "projectName": "planB",
+      "vmArgs": ""
+    }
+  ]
+}

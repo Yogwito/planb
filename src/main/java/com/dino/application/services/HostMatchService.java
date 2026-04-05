@@ -7,6 +7,7 @@ import com.dino.domain.entities.Door;
 import com.dino.domain.entities.ExitZone;
 import com.dino.domain.entities.PlatformTile;
 import com.dino.domain.entities.Player;
+import com.dino.domain.entities.PushBlock;
 import com.dino.domain.events.EventNames;
 import com.dino.domain.rules.GameRules;
 
@@ -68,6 +69,7 @@ public class HostMatchService {
 
         applyThreadElasticity(players, dt);
         resolvePlayerCollisions(players);
+        updatePushBlocks(players, dt);
 
         updateButtonAndDoor(players);
         updateExitState(players);
@@ -107,7 +109,12 @@ public class HostMatchService {
         }
         double targetVelocity = moveDirection * GameConfig.MOVE_SPEED;
         double velocityDelta = targetVelocity - player.getVx();
-        double acceleration = moveDirection == 0 ? GameConfig.MOVE_FRICTION : GameConfig.MOVE_ACCELERATION;
+        double acceleration;
+        if (moveDirection == 0) {
+            acceleration = GameConfig.MOVE_FRICTION;
+        } else {
+            acceleration = player.isGrounded() ? GameConfig.MOVE_ACCELERATION : GameConfig.AIR_MOVE_ACCELERATION;
+        }
         double maxDelta = acceleration * dt;
         if (Math.abs(velocityDelta) > maxDelta) {
             velocityDelta = Math.signum(velocityDelta) * maxDelta;
@@ -120,10 +127,17 @@ public class HostMatchService {
             player.setCoyoteTimer(Math.max(0, player.getCoyoteTimer() - dt));
         }
 
-        if (input.jumpQueued && (player.isGrounded() || player.getCoyoteTimer() > 0)) {
+        if (input.jumpQueued) {
+            input.jumpBufferTimer = GameConfig.JUMP_BUFFER_SECONDS;
+        } else {
+            input.jumpBufferTimer = Math.max(0, input.jumpBufferTimer - dt);
+        }
+
+        if (input.jumpBufferTimer > 0 && (player.isGrounded() || player.getCoyoteTimer() > 0)) {
             player.setVy(GameConfig.JUMP_VELOCITY);
             player.setGrounded(false);
             player.setCoyoteTimer(0);
+            input.jumpBufferTimer = 0;
             eventBus.publish(EventNames.PLAYER_JUMPED, Map.of("playerId", player.getId()));
         }
         input.jumpQueued = false;
@@ -136,12 +150,21 @@ public class HostMatchService {
         player.setY(player.getY() + player.getVy() * dt);
         resolveVerticalCollisions(player);
 
+        if (input.jumpBufferTimer > 0 && player.isGrounded()) {
+            player.setVy(GameConfig.JUMP_VELOCITY);
+            player.setGrounded(false);
+            player.setCoyoteTimer(0);
+            input.jumpBufferTimer = 0;
+            eventBus.publish(EventNames.PLAYER_JUMPED, Map.of("playerId", player.getId()));
+        }
+
         clampPlayer(player);
         if (GameRules.violatesThreadDistance(player, sessionService.getPlayers().values())) {
             player.setX(previousX);
             player.setY(previousY);
-            player.setVx(previousVx);
-            player.setVy(Math.min(0, previousVy));
+            player.setVx(0);
+            // Damp but don't zero vy: zeroing it caused "floating" jitter (gravity re-adds vy every frame)
+            player.setVy(player.getVy() * 0.4);
         }
     }
 
@@ -164,6 +187,20 @@ public class HostMatchService {
                 player.setX(door.getX() + door.getWidth());
             }
             player.setVx(0);
+        }
+
+        for (PushBlock block : sessionService.getPushBlocks()) {
+            if (!GameRules.intersects(player, block)) continue;
+            if (player.getVx() > 0) {
+                player.setX(block.getX() - player.getWidth());
+                block.setVx(Math.min(GameConfig.PUSH_BLOCK_MAX_SPEED,
+                    Math.max(block.getVx(), player.getVx() * GameConfig.PUSH_BLOCK_PUSH_IMPULSE)));
+            } else if (player.getVx() < 0) {
+                player.setX(block.getX() + block.getWidth());
+                block.setVx(Math.max(-GameConfig.PUSH_BLOCK_MAX_SPEED,
+                    Math.min(block.getVx(), player.getVx() * GameConfig.PUSH_BLOCK_PUSH_IMPULSE)));
+            }
+            player.setVx(player.getVx() * 0.55);
         }
     }
 
@@ -193,6 +230,19 @@ public class HostMatchService {
             }
             player.setVy(0);
         }
+
+        for (PushBlock block : sessionService.getPushBlocks()) {
+            if (!GameRules.intersects(player, block)) continue;
+            if (player.getVy() > 0) {
+                player.setY(block.getY() - player.getHeight());
+                player.setVy(0);
+                player.setGrounded(true);
+                player.setCoyoteTimer(GameConfig.COYOTE_TIME_SECONDS);
+            } else if (player.getVy() < 0) {
+                player.setY(block.getY() + block.getHeight());
+                player.setVy(0);
+            }
+        }
     }
 
     private void clampPlayer(Player player) {
@@ -218,9 +268,18 @@ public class HostMatchService {
             if (distance <= GameConfig.THREAD_REST_DISTANCE || distance == 0) continue;
 
             double stretch = distance - GameConfig.THREAD_REST_DISTANCE;
-            double pull = Math.min(stretch * GameConfig.THREAD_PULL_FACTOR * dt, stretch * 0.5);
             double nx = dx / distance;
             double ny = dy / distance;
+            double relativeVelocity = (b.getVx() - a.getVx()) * nx + (b.getVy() - a.getVy()) * ny;
+            double springForce = stretch * GameConfig.THREAD_PULL_FACTOR;
+            double dampingForce = relativeVelocity * GameConfig.THREAD_DAMPING;
+            double pull = Math.min(Math.max(0, (springForce - dampingForce) * dt), stretch * 0.65);
+
+            double aMobility = a.isGrounded() ? 0.42 : 0.58;
+            double bMobility = b.isGrounded() ? 0.42 : 0.58;
+            double totalMobility = aMobility + bMobility;
+            double aShare = totalMobility == 0 ? 0.5 : bMobility / totalMobility;
+            double bShare = totalMobility == 0 ? 0.5 : aMobility / totalMobility;
 
             if (stretch > 8 && threadSoundCooldownRemaining <= 0) {
                 threadSoundCooldownRemaining = THREAD_SOUND_COOLDOWN;
@@ -231,10 +290,15 @@ public class HostMatchService {
                 ));
             }
 
-            a.setX(a.getX() + nx * pull * 0.5);
-            a.setY(a.getY() + ny * pull * 0.08);
-            b.setX(b.getX() - nx * pull * 0.5);
-            b.setY(b.getY() - ny * pull * 0.08);
+            a.setX(a.getX() + nx * pull * aShare);
+            a.setY(a.getY() + ny * pull * GameConfig.THREAD_VERTICAL_PULL * aShare);
+            b.setX(b.getX() - nx * pull * bShare);
+            b.setY(b.getY() - ny * pull * GameConfig.THREAD_VERTICAL_PULL * bShare);
+
+            a.setVx(a.getVx() + nx * pull * 0.55);
+            b.setVx(b.getVx() - nx * pull * 0.55);
+            if (!a.isGrounded()) a.setVy(a.getVy() + ny * pull * 0.22);
+            if (!b.isGrounded()) b.setVy(b.getVy() - ny * pull * 0.22);
 
             clampPlayer(a);
             resolveHorizontalCollisions(a);
@@ -245,8 +309,10 @@ public class HostMatchService {
 
             if (distance > GameConfig.THREAD_HARD_LIMIT) {
                 double excess = distance - GameConfig.THREAD_HARD_LIMIT;
-                a.setX(a.getX() + nx * excess * 0.5);
-                b.setX(b.getX() - nx * excess * 0.5);
+                a.setX(a.getX() + nx * excess * aShare);
+                b.setX(b.getX() - nx * excess * bShare);
+                a.setVx(a.getVx() * 0.65);
+                b.setVx(b.getVx() * 0.65);
                 clampPlayer(a);
                 resolveHorizontalCollisions(a);
                 resolveVerticalCollisions(a);
@@ -272,30 +338,8 @@ public class HostMatchService {
                 double overlapY = Math.min(a.getY() + a.getHeight(), b.getY() + b.getHeight()) - Math.max(a.getY(), b.getY());
                 if (overlapX <= 0 || overlapY <= 0) continue;
 
-                if (overlapX < overlapY) {
-                    double push = overlapX / 2.0 + 0.01;
-                    if (a.getCenterX() < b.getCenterX()) {
-                        a.setX(a.getX() - push);
-                        b.setX(b.getX() + push);
-                    } else {
-                        a.setX(a.getX() + push);
-                        b.setX(b.getX() - push);
-                    }
-                    a.setVx(0);
-                    b.setVx(0);
-                } else {
-                    double push = overlapY / 2.0 + 0.01;
-                    if (a.getCenterY() < b.getCenterY()) {
-                        a.setY(a.getY() - push);
-                        b.setY(b.getY() + push);
-                        a.setGrounded(true);
-                    } else {
-                        a.setY(a.getY() + push);
-                        b.setY(b.getY() - push);
-                        b.setGrounded(true);
-                    }
-                    a.setVy(0);
-                    b.setVy(0);
+                if (!resolveVerticalPlayerContact(a, b, overlapY) && !resolveVerticalPlayerContact(b, a, overlapY)) {
+                    resolveSidePlayerContact(a, b, overlapX);
                 }
 
                 if (collisionSoundCooldownRemaining <= 0) {
@@ -308,8 +352,55 @@ public class HostMatchService {
 
                 clampPlayer(a);
                 clampPlayer(b);
+                resolveHorizontalCollisions(a);
+                resolveVerticalCollisions(a);
+                resolveHorizontalCollisions(b);
+                resolveVerticalCollisions(b);
             }
         }
+    }
+
+    private boolean resolveVerticalPlayerContact(Player topCandidate, Player bottomCandidate, double overlapY) {
+        double topBottom = topCandidate.getY() + topCandidate.getHeight();
+        double bottomTop = bottomCandidate.getY();
+        double contactGap = topBottom - bottomTop;
+        boolean topIsActuallyAbove = topCandidate.getCenterY() < bottomCandidate.getCenterY();
+        boolean topMovingDownIntoBottom = topCandidate.getVy() >= bottomCandidate.getVy() - 30;
+        boolean shallowTopContact = contactGap > 0 && contactGap <= GameConfig.PLAYER_COLLISION_CONTACT_MARGIN;
+        boolean mostlyVertical = overlapY <= Math.min(topCandidate.getHeight(), bottomCandidate.getHeight()) * 0.45;
+        if (!topIsActuallyAbove || !topMovingDownIntoBottom || !(shallowTopContact || mostlyVertical)) {
+            return false;
+        }
+
+        topCandidate.setY(bottomCandidate.getY() - topCandidate.getHeight() - 0.01);
+        topCandidate.setVy(0);
+        topCandidate.setGrounded(true);
+        topCandidate.setCoyoteTimer(GameConfig.COYOTE_TIME_SECONDS);
+        topCandidate.setVx(topCandidate.getVx() * (1.0 - GameConfig.PLAYER_COLLISION_CARRY_RATIO)
+            + bottomCandidate.getVx() * GameConfig.PLAYER_COLLISION_CARRY_RATIO);
+
+        if (bottomCandidate.getVy() < 0) {
+            bottomCandidate.setVy(bottomCandidate.getVy() * 0.35);
+        }
+        return true;
+    }
+
+    private void resolveSidePlayerContact(Player a, Player b, double overlapX) {
+        double push = overlapX + 0.01;
+        double aMobility = a.isGrounded() ? 0.38 : 0.62;
+        double bMobility = b.isGrounded() ? 0.38 : 0.62;
+        double totalMobility = aMobility + bMobility;
+        double aShare = totalMobility == 0 ? 0.5 : aMobility / totalMobility;
+        double bShare = totalMobility == 0 ? 0.5 : bMobility / totalMobility;
+        if (a.getCenterX() < b.getCenterX()) {
+            a.setX(a.getX() - push * aShare);
+            b.setX(b.getX() + push * bShare);
+        } else {
+            a.setX(a.getX() + push * aShare);
+            b.setX(b.getX() - push * bShare);
+        }
+        a.setVx(a.getVx() * GameConfig.PLAYER_COLLISION_VELOCITY_DAMPING);
+        b.setVx(b.getVx() * GameConfig.PLAYER_COLLISION_VELOCITY_DAMPING);
     }
 
     private void updateButtonAndDoor(List<Player> players) {
@@ -339,6 +430,94 @@ public class HostMatchService {
         }
         if (changed) {
             eventBus.publish(EventNames.BUTTON_STATE_CHANGED, Map.of("pressed", pressed));
+        }
+    }
+
+    private void updatePushBlocks(List<Player> players, double dt) {
+        for (PushBlock block : sessionService.getPushBlocks()) {
+            block.setVy(block.getVy() + GameConfig.PUSH_BLOCK_GRAVITY * dt);
+
+            double vx = block.getVx();
+            if (Math.abs(vx) > 0.001) {
+                double friction = GameConfig.PUSH_BLOCK_FRICTION * dt;
+                if (Math.abs(vx) <= friction) {
+                    vx = 0;
+                } else {
+                    vx -= Math.signum(vx) * friction;
+                }
+            }
+            block.setVx(Math.max(-GameConfig.PUSH_BLOCK_MAX_SPEED, Math.min(GameConfig.PUSH_BLOCK_MAX_SPEED, vx)));
+
+            block.setX(block.getX() + block.getVx() * dt);
+            resolvePushBlockHorizontalCollisions(block, players);
+
+            block.setY(block.getY() + block.getVy() * dt);
+            resolvePushBlockVerticalCollisions(block);
+            clampPushBlock(block);
+        }
+    }
+
+    private void resolvePushBlockHorizontalCollisions(PushBlock block, List<Player> players) {
+        for (PlatformTile platform : sessionService.getPlatforms()) {
+            if (!GameRules.intersects(block, platform)) continue;
+            if (block.getVx() > 0) {
+                block.setX(platform.getX() - block.getWidth());
+            } else if (block.getVx() < 0) {
+                block.setX(platform.getX() + platform.getWidth());
+            }
+            block.setVx(0);
+        }
+
+        Door door = sessionService.getDoor();
+        if (GameRules.intersects(block, door)) {
+            if (block.getVx() > 0) {
+                block.setX(door.getX() - block.getWidth());
+            } else if (block.getVx() < 0) {
+                block.setX(door.getX() + door.getWidth());
+            }
+            block.setVx(0);
+        }
+
+        for (Player player : players) {
+            if (!player.isConnected() || !player.isAlive()) continue;
+            if (!GameRules.intersects(player, block)) continue;
+            double blockCenterX = block.getX() + block.getWidth() / 2.0;
+            if (blockCenterX < player.getCenterX()) {
+                player.setX(block.getX() + block.getWidth());
+            } else {
+                player.setX(block.getX() - player.getWidth());
+            }
+            player.setVx(player.getVx() * 0.5);
+        }
+    }
+
+    private void resolvePushBlockVerticalCollisions(PushBlock block) {
+        for (PlatformTile platform : sessionService.getPlatforms()) {
+            if (!GameRules.intersects(block, platform)) continue;
+            if (block.getVy() > 0) {
+                block.setY(platform.getY() - block.getHeight());
+            } else if (block.getVy() < 0) {
+                block.setY(platform.getY() + platform.getHeight());
+            }
+            block.setVy(0);
+        }
+
+        Door door = sessionService.getDoor();
+        if (GameRules.intersects(block, door)) {
+            if (block.getVy() > 0) {
+                block.setY(door.getY() - block.getHeight());
+            } else if (block.getVy() < 0) {
+                block.setY(door.getY() + door.getHeight());
+            }
+            block.setVy(0);
+        }
+    }
+
+    private void clampPushBlock(PushBlock block) {
+        block.setX(Math.max(0, Math.min(GameConfig.LEVEL_WIDTH - block.getWidth(), block.getX())));
+        if (block.getY() < 0) {
+            block.setY(0);
+            block.setVy(0);
         }
     }
 
@@ -388,6 +567,7 @@ public class HostMatchService {
         sessionService.setCurrentLevelIndex(levelIndex);
         sessionService.getPlatforms().clear();
         sessionService.getSpawnPoints().clear();
+        sessionService.getPushBlocks().clear();
         sessionService.getCoins().clear();
 
         switch (levelIndex) {
@@ -422,6 +602,7 @@ public class HostMatchService {
         sessionService.setButtonSwitch(new ButtonSwitch("button", 850, 658, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
         sessionService.setDoor(new Door("door", 1370, 450, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
         sessionService.setExitZone(new ExitZone(1560, 450, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        sessionService.getPushBlocks().add(new PushBlock("l1_box", 330, 682, GameConfig.PUSH_BLOCK_WIDTH, GameConfig.PUSH_BLOCK_HEIGHT));
         // coins: platform_y - 20  (16px coin + 4px gap above platform top)
         sessionService.getCoins().add(new CollectibleItem("l1_c1", 622, 692, GameConfig.SCORE_COIN_SMALL));  // step_a
         sessionService.getCoins().add(new CollectibleItem("l1_c2", 790, 654, GameConfig.SCORE_COIN_SMALL));  // step_b (left of button)
@@ -430,83 +611,80 @@ public class HostMatchService {
     }
 
     private void loadLevelTwo() {
-        // Zigzag: height goes 720→760(down)→700(up)→645(up)→580(up)→640(down)→600
-        // Two big gaps (GAP1=220px, GAP2=190px) + one medium gap (120px before door)
-        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   720, 200, 24));
-        // GAP1 220px (280→500)
-        sessionService.getPlatforms().add(new PlatformTile("drop_a",    500,  760, 160, 24)); // drops 40px
-        sessionService.getPlatforms().add(new PlatformTile("rise_b",    690,  700, 160, 24)); // rises 60px; 30px from drop_a
-        // GAP2 190px (850→1040)
-        sessionService.getPlatforms().add(new PlatformTile("mid_c",     1040, 645, 140, 24)); // rises 55px
-        sessionService.getPlatforms().add(new PlatformTile("button_p",  1210, 580, 110, 24)); // rises 65px; 30px from mid_c
-        // 120px gap (1320→1440) — requires jump, can fall
-        sessionService.getPlatforms().add(new PlatformTile("door_p",    1440, 640, 180, 24)); // drops 60px
-        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1650, 600, 130, 24)); // rises 40px; 30px from door_p
+        // Zigzag mas amable: huecos mas cortos y plataformas de recepcion mas anchas.
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   720, 220, 24));
+        sessionService.getPlatforms().add(new PlatformTile("drop_a",    470,  748, 190, 24));
+        sessionService.getPlatforms().add(new PlatformTile("rise_b",    680,  698, 180, 24));
+        sessionService.getPlatforms().add(new PlatformTile("mid_c",     990,  648, 180, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_p",  1190, 592, 145, 24));
+        sessionService.getPlatforms().add(new PlatformTile("door_p",    1400, 632, 210, 24));
+        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1630, 600, 160, 24));
 
         addDefaultSpawns(100, 668); // 720 - 52
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 1225, 564, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
-        sessionService.setDoor(new Door("door", 1490, 492, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
-        sessionService.setExitZone(new ExitZone(1655, 490, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
-        sessionService.getCoins().add(new CollectibleItem("l2_c1", 572, 740, GameConfig.SCORE_COIN_SMALL));  // drop_a (y=760)
-        sessionService.getCoins().add(new CollectibleItem("l2_c2", 762, 680, GameConfig.SCORE_COIN_SMALL));  // rise_b (y=700)
-        sessionService.getCoins().add(new CollectibleItem("l2_c3", 1102, 625, GameConfig.SCORE_COIN_SMALL)); // mid_c  (y=645)
-        sessionService.getCoins().add(new CollectibleItem("l2_c4", 1688, 580, GameConfig.SCORE_COIN_LARGE)); // exit_p (y=600), gold
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 1230, 576, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1470, 484, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1650, 490, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        sessionService.getCoins().add(new CollectibleItem("l2_c1", 548, 728, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l2_c2", 760, 678, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l2_c3", 1080, 626, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l2_c4", 1698, 580, GameConfig.SCORE_COIN_LARGE));
     }
 
     private void loadLevelThree() {
-        // Nivel 3 rebajado: plataformas mas anchas y saltos menos castigadores, pero sigue exigiendo coordinacion.
-        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   710, 200, 24));
-        sessionService.getPlatforms().add(new PlatformTile("stone_a",   360,  675, 150, 24));
-        sessionService.getPlatforms().add(new PlatformTile("button_p",  590,  635, 180, 24));
-        sessionService.getPlatforms().add(new PlatformTile("stone_b",   860,  610, 170, 24));
-        sessionService.getPlatforms().add(new PlatformTile("door_p",    1100, 580, 210, 24));
-        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1380, 555, 230, 24));
+        // Nivel 3 un poco mas amable: mas continuidad horizontal y recepciones mas amplias.
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   710, 220, 24));
+        sessionService.getPlatforms().add(new PlatformTile("stone_a",   340,  680, 185, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_p",  575,  638, 210, 24));
+        sessionService.getPlatforms().add(new PlatformTile("stone_b",   835,  614, 200, 24));
+        sessionService.getPlatforms().add(new PlatformTile("door_p",    1085, 584, 235, 24));
+        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1360, 560, 255, 24));
 
         addDefaultSpawns(100, 658);
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 650, 619, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
-        sessionService.setDoor(new Door("door", 1180, 432, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
-        sessionService.setExitZone(new ExitZone(1430, 445, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
-        sessionService.getCoins().add(new CollectibleItem("l3_c1", 420, 655, GameConfig.SCORE_COIN_SMALL));
-        sessionService.getCoins().add(new CollectibleItem("l3_c2", 665, 615, GameConfig.SCORE_COIN_SMALL));
-        sessionService.getCoins().add(new CollectibleItem("l3_c3", 930, 590, GameConfig.SCORE_COIN_SMALL));
-        sessionService.getCoins().add(new CollectibleItem("l3_c4", 1190, 560, GameConfig.SCORE_COIN_LARGE));
-        sessionService.getCoins().add(new CollectibleItem("l3_c5", 1500, 535, GameConfig.SCORE_COIN_SMALL));
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 652, 622, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1170, 436, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1435, 450, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        sessionService.getPushBlocks().add(new PushBlock("l3_box", 995, 546, GameConfig.PUSH_BLOCK_WIDTH, GameConfig.PUSH_BLOCK_HEIGHT));
+        sessionService.getCoins().add(new CollectibleItem("l3_c1", 425, 660, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l3_c2", 668, 618, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l3_c3", 935, 594, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l3_c4", 1195, 564, GameConfig.SCORE_COIN_LARGE));
+        sessionService.getCoins().add(new CollectibleItem("l3_c5", 1508, 540, GameConfig.SCORE_COIN_SMALL));
     }
 
     private void loadLevelFour() {
-        // Sala amplia para 4 jugadores: varias plataformas anchas donde pueden coincidir todos.
-        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   720, 300, 24));
-        sessionService.getPlatforms().add(new PlatformTile("group_a",   450,  685, 340, 24));
-        sessionService.getPlatforms().add(new PlatformTile("button_p",  860,  645, 320, 24));
-        sessionService.getPlatforms().add(new PlatformTile("group_b",   1240, 610, 320, 24));
-        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1600, 575, 180, 24));
+        // Sala amplia para 4 jugadores: mismas ideas pero con mas espacio de reunion y menos hueco final.
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   720, 320, 24));
+        sessionService.getPlatforms().add(new PlatformTile("group_a",   430,  688, 370, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_p",  845,  648, 340, 24));
+        sessionService.getPlatforms().add(new PlatformTile("group_b",   1230, 615, 345, 24));
+        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1580, 582, 220, 24));
 
         addDefaultSpawns(120, 668);
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 980, 629, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
-        sessionService.setDoor(new Door("door", 1495, 462, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
-        sessionService.setExitZone(new ExitZone(1630, 465, 150, GameConfig.EXIT_HEIGHT));
-        sessionService.getCoins().add(new CollectibleItem("l4_c1", 545, 665, GameConfig.SCORE_COIN_SMALL));
-        sessionService.getCoins().add(new CollectibleItem("l4_c2", 1005, 625, GameConfig.SCORE_COIN_SMALL));
-        sessionService.getCoins().add(new CollectibleItem("l4_c3", 1360, 590, GameConfig.SCORE_COIN_SMALL));
-        sessionService.getCoins().add(new CollectibleItem("l4_c4", 1675, 555, GameConfig.SCORE_COIN_LARGE));
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 985, 632, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1480, 468, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1620, 470, 165, GameConfig.EXIT_HEIGHT));
+        sessionService.getCoins().add(new CollectibleItem("l4_c1", 555, 668, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l4_c2", 1010, 628, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l4_c3", 1375, 595, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l4_c4", 1685, 562, GameConfig.SCORE_COIN_LARGE));
     }
 
     private void loadLevelFive() {
-        // Final: sigue siendo jugable en grupo, con dos grandes zonas donde los 4 caben al mismo tiempo.
-        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   90,   720, 320, 24));
-        sessionService.getPlatforms().add(new PlatformTile("group_a",   500,  690, 360, 24));
-        sessionService.getPlatforms().add(new PlatformTile("bridge",    960,  650, 240, 24));
-        sessionService.getPlatforms().add(new PlatformTile("button_p",  1270, 615, 320, 24));
-        sessionService.getPlatforms().add(new PlatformTile("group_b",   1500, 575, 300, 24));
+        // Final ligeramente suavizado: puente mas ancho y zonas finales mas seguras.
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   90,   720, 340, 24));
+        sessionService.getPlatforms().add(new PlatformTile("group_a",   485,  692, 380, 24));
+        sessionService.getPlatforms().add(new PlatformTile("bridge",    940,  652, 285, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_p",  1250, 618, 340, 24));
+        sessionService.getPlatforms().add(new PlatformTile("group_b",   1485, 582, 330, 24));
 
         addDefaultSpawns(130, 668);
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 1390, 599, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
-        sessionService.setDoor(new Door("door", 1685, 427, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
-        sessionService.setExitZone(new ExitZone(1545, 465, 220, GameConfig.EXIT_HEIGHT));
-        sessionService.getCoins().add(new CollectibleItem("l5_c1", 620, 670, GameConfig.SCORE_COIN_SMALL));
-        sessionService.getCoins().add(new CollectibleItem("l5_c2", 1065, 630, GameConfig.SCORE_COIN_SMALL));
-        sessionService.getCoins().add(new CollectibleItem("l5_c3", 1395, 595, GameConfig.SCORE_COIN_SMALL));
-        sessionService.getCoins().add(new CollectibleItem("l5_c4", 1605, 555, GameConfig.SCORE_COIN_LARGE));
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 1395, 602, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1675, 435, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1545, 470, 235, GameConfig.EXIT_HEIGHT));
+        sessionService.getCoins().add(new CollectibleItem("l5_c1", 630, 672, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l5_c2", 1080, 632, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l5_c3", 1405, 598, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l5_c4", 1615, 562, GameConfig.SCORE_COIN_LARGE));
     }
 
     private void addDefaultSpawns(double baseX, double baseY) {
@@ -536,6 +714,12 @@ public class HostMatchService {
         }
         if (sessionService.getButtonSwitch() != null) sessionService.getButtonSwitch().setPressed(false);
         if (sessionService.getDoor() != null) sessionService.getDoor().setOpen(false);
+        for (PushBlock block : sessionService.getPushBlocks()) {
+            block.setX(block.getHomeX());
+            block.setY(block.getHomeY());
+            block.setVx(0);
+            block.setVy(0);
+        }
         for (CollectibleItem coin : sessionService.getCoins()) coin.setActive(true);
         nextFinishOrder = 1;
     }
@@ -585,5 +769,6 @@ public class HostMatchService {
         double targetX;
         boolean hasTarget;
         boolean jumpQueued;
+        double jumpBufferTimer;
     }
 }

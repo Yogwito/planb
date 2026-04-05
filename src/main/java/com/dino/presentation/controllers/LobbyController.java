@@ -2,6 +2,7 @@ package com.dino.presentation.controllers;
 
 import com.dino.MainApp;
 import com.dino.application.services.HostMatchService;
+import com.dino.config.GameConfig;
 import com.dino.domain.entities.Player;
 import com.dino.domain.events.EventNames;
 import com.dino.infrastructure.serialization.MessageSerializer;
@@ -31,6 +32,8 @@ public class LobbyController implements Initializable {
     private final MessageSerializer serializer = new MessageSerializer();
     private Timer networkTimer;
     private long lastLobbyBroadcastAt = 0;
+    private long lastHeartbeatAt = 0;
+    private boolean startGameHandled = false;
 
     @Override
     public void initialize(URL url, ResourceBundle rb) {
@@ -85,7 +88,7 @@ public class LobbyController implements Initializable {
             hostMatchService.initWorld();
             Map<String, Object> startMessage = MainApp.sessionService.getSnapshotData();
             startMessage.put("type", MessageSerializer.START_GAME);
-            MainApp.udpPeer.broadcast(startMessage, MainApp.sessionService.getRemotePeerAddresses());
+            MainApp.udpPeer.broadcastBurst(startMessage, MainApp.sessionService.getRemotePeerAddresses(), 6, 55);
             MainApp.eventBus.publish(EventNames.GAME_STARTED, Map.of());
             if (networkTimer != null) networkTimer.cancel();
             openGameScene();
@@ -100,7 +103,12 @@ public class LobbyController implements Initializable {
             @Override
             public void run() {
                 if (MainApp.udpPeer == null || !MainApp.udpPeer.isBound()) return;
-                if (MainApp.sessionService.isHost()) broadcastLobbySnapshotIfDue();
+                if (MainApp.sessionService.isHost()) {
+                    expireInactivePeersIfNeeded();
+                    broadcastLobbySnapshotIfDue();
+                } else {
+                    sendHeartbeatIfDue();
+                }
                 var received = MainApp.udpPeer.receive();
                 received.ifPresent(entry -> handleMessage(entry.getKey(), entry.getValue()));
             }
@@ -117,6 +125,8 @@ public class LobbyController implements Initializable {
         }
 
         if (MessageSerializer.START_GAME.equals(type)) {
+            if (startGameHandled) return;
+            startGameHandled = true;
             MainApp.sessionService.updateFromSnapshot(msg);
             Platform.runLater(() -> {
                 try {
@@ -147,20 +157,48 @@ public class LobbyController implements Initializable {
                 player.setConnected(true);
             }
             MainApp.sessionService.registerPeerAddress(playerId, sender);
+            MainApp.sessionService.markPeerSeen(playerId);
             MainApp.eventBus.publish(EventNames.PLAYER_JOINED, Map.of("playerId", playerId, "name", name));
             broadcastLobbySnapshot();
         } else if (MessageSerializer.READY.equals(type)) {
             String playerId = (String) msg.get("playerId");
+            MainApp.sessionService.registerPeerAddress(playerId, sender);
+            MainApp.sessionService.markPeerSeen(playerId);
+            MainApp.sessionService.markPlayerConnected(playerId, true);
             MainApp.sessionService.markPlayerReady(playerId, true);
             MainApp.eventBus.publish(EventNames.PLAYER_READY, msg);
             Platform.runLater(() -> statusLabel.setText("Jugador listo: " + msg.getOrDefault("playerId", "?")));
             broadcastLobbySnapshot();
+        } else if (MessageSerializer.HEARTBEAT.equals(type)) {
+            String playerId = (String) msg.get("playerId");
+            MainApp.sessionService.registerPeerAddress(playerId, sender);
+            MainApp.sessionService.markPeerSeen(playerId);
+            MainApp.sessionService.markPlayerConnected(playerId, true);
         } else if (MessageSerializer.DISCONNECT.equals(type)) {
             String playerId = (String) msg.get("playerId");
             MainApp.sessionService.removePlayer(playerId);
             Platform.runLater(() -> statusLabel.setText("Jugador desconectado: " + msg.getOrDefault("playerId", "?")));
             broadcastLobbySnapshot();
         }
+    }
+
+    private void sendHeartbeatIfDue() {
+        long now = System.currentTimeMillis();
+        if (now - lastHeartbeatAt < (long) (GameConfig.CLIENT_HEARTBEAT_SECONDS * 1000)) return;
+        lastHeartbeatAt = now;
+        try {
+            Map<String, Object> msg = serializer.build(MessageSerializer.HEARTBEAT,
+                "playerId", MainApp.sessionService.getLocalPlayerId());
+            MainApp.udpPeer.send(msg,
+                InetAddress.getByName(MainApp.sessionService.getHostIp()),
+                MainApp.sessionService.getHostPort());
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void expireInactivePeersIfNeeded() {
+        List<String> expired = MainApp.sessionService.expireInactivePeers((long) (GameConfig.HOST_PEER_TIMEOUT_SECONDS * 1000));
+        if (!expired.isEmpty()) broadcastLobbySnapshot();
     }
 
     private void broadcastLobbySnapshotIfDue() {

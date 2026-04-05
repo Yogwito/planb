@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SessionServiceTest {
@@ -96,5 +97,46 @@ class SessionServiceTest {
 
         assertEquals(1, sessionService.getPlayersSnapshot().size());
         assertEquals("host", sessionService.getPlayersSnapshot().get(0).getId());
+    }
+
+    @Test
+    void staleSnapshotsAreIgnoredBySequence() {
+        SessionService sessionService = new SessionService(new EventBus());
+        sessionService.updateFromSnapshot(Map.of(
+            "seq", 2L,
+            "elapsedTime", 10.0,
+            "players", List.of()
+        ));
+
+        sessionService.updateFromSnapshot(Map.of(
+            "seq", 1L,
+            "elapsedTime", 5.0,
+            "players", List.of()
+        ));
+
+        assertEquals(10.0, sessionService.getElapsedTime(), 0.0001);
+    }
+
+    @Test
+    void inactivePeersExpireAfterTimeout() throws Exception {
+        SessionService sessionService = new SessionService(new EventBus());
+        Player host = new Player("host", "Host", "red");
+        Player guest = new Player("guest", "Guest", "blue");
+        sessionService.addPlayer(host);
+        sessionService.addPlayer(guest);
+        sessionService.setLocalPlayerId("host");
+        sessionService.setHost(true);
+        sessionService.registerPeerAddress("guest", new InetSocketAddress("127.0.0.1", 5001));
+
+        Thread.sleep(5);
+        List<String> expired = sessionService.expireInactivePeers(1);
+
+        assertEquals(1, expired.size());
+        assertEquals("guest", expired.get(0));
+        assertFalse(sessionService.getPlayersSnapshot().stream()
+            .filter(player -> "guest".equals(player.getId()))
+            .findFirst()
+            .orElseThrow()
+            .isConnected());
     }
 }

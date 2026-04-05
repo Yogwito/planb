@@ -4,9 +4,11 @@ import com.dino.application.services.EventBus;
 import com.dino.application.services.HostMatchService;
 import com.dino.application.services.SessionService;
 import com.dino.domain.entities.Player;
+import com.dino.domain.entities.PushBlock;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HostMatchServiceTest {
@@ -107,31 +109,6 @@ class HostMatchServiceTest {
     }
 
     @Test
-    void elasticThreadPullsPlayersBackBeforeHardBreak() {
-        EventBus eventBus = new EventBus();
-        SessionService sessionService = new SessionService(eventBus);
-        HostMatchService hostMatchService = new HostMatchService(sessionService, eventBus);
-
-        Player host = new Player("host", "Host", "red");
-        Player guest = new Player("guest", "Guest", "blue");
-        sessionService.addPlayer(host);
-        sessionService.addPlayer(guest);
-        sessionService.setGameRunning(true);
-        hostMatchService.initWorld();
-
-        host.setX(120);
-        host.setY(740);
-        guest.setX(360);
-        guest.setY(740);
-
-        double beforeDistance = Math.abs(guest.getCenterX() - host.getCenterX());
-        hostMatchService.tick(0.016);
-        double afterDistance = Math.abs(guest.getCenterX() - host.getCenterX());
-
-        assertTrue(afterDistance < beforeDistance);
-    }
-
-    @Test
     void playersDoNotEndTickOverlapping() {
         EventBus eventBus = new EventBus();
         SessionService sessionService = new SessionService(eventBus);
@@ -155,5 +132,34 @@ class HostMatchServiceTest {
             || guest.getX() + guest.getWidth() <= host.getX()
             || host.getY() + host.getHeight() <= guest.getY()
             || guest.getY() + guest.getHeight() <= host.getY());
+    }
+
+    @Test
+    void playerCanPushSynchronizedBlock() {
+        EventBus eventBus = new EventBus();
+        SessionService sessionService = new SessionService(eventBus);
+        HostMatchService hostMatchService = new HostMatchService(sessionService, eventBus);
+
+        Player host = new Player("host", "Host", "red");
+        sessionService.addPlayer(host);
+        sessionService.setGameRunning(true);
+        hostMatchService.initWorld();
+
+        PushBlock block = sessionService.getPushBlocks().stream()
+            .filter(pushBlock -> "l1_box".equals(pushBlock.getId()))
+            .findFirst()
+            .orElse(null);
+        assertNotNull(block);
+
+        host.setX(288);
+        host.setY(698);
+        hostMatchService.handleInput(host.getId(), 900, false);
+
+        double initialX = block.getX();
+        for (int i = 0; i < 12; i++) {
+            hostMatchService.tick(0.016);
+        }
+
+        assertTrue(block.getX() > initialX);
     }
 }

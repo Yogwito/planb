@@ -8,6 +8,7 @@ import com.dino.domain.entities.Door;
 import com.dino.domain.entities.ExitZone;
 import com.dino.domain.entities.PlatformTile;
 import com.dino.domain.entities.Player;
+import com.dino.domain.entities.PushBlock;
 import com.dino.domain.events.EventNames;
 import com.dino.infrastructure.serialization.MessageSerializer;
 import javafx.animation.AnimationTimer;
@@ -21,6 +22,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.MouseButton;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
@@ -29,11 +31,15 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ResourceBundle;
+import java.util.Set;
 
 public class GameController implements Initializable {
     @FXML private Canvas arenaCanvas;
@@ -55,23 +61,36 @@ public class GameController implements Initializable {
     private double cameraY;
     private double feedbackTimer;
     private double inputResendTimer;
+    private double heartbeatTimer;
     private Double pendingTargetX;
     private int pendingJumpRepeats;
     private boolean leftPressed;
     private boolean rightPressed;
+    private boolean gameOverHandled;
     private double timeSinceLastSnapshot;
     private double lastSnapshotAgeForRender;
+    private String pendingCriticalType;
+    private int pendingCriticalVersion;
+    private double pendingCriticalAge;
+    private final Set<String> criticalAckedPeers = new HashSet<>();
+    private final Map<String, Integer> peerWarningCounts = new HashMap<>();
+    private final Set<String> stalePeers = new HashSet<>();
     private final Map<String, RenderState> renderStates = new HashMap<>();
+    private final Map<String, Deque<SnapshotSample>> snapshotBuffers = new HashMap<>();
     private final List<Particle> particles = new ArrayList<>();
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         MainApp.eventBus.subscribe(EventNames.SNAPSHOT_RECEIVED, e -> {
             timeSinceLastSnapshot = 0;
+            captureSnapshotSamples();
             Platform.runLater(this::refreshUI);
         });
         MainApp.eventBus.subscribe(EventNames.ROOM_RESET, e -> Platform.runLater(() ->
             {
+                if (MainApp.sessionService.isHost()) {
+                    armCriticalSnapshot("ROOM_RESET", MainApp.sessionService.getRoomResetCount());
+                }
                 showFeedback("Sala reiniciada", "#ffadad");
                 spawnBurst(490, 260, Color.web("#ffadad"), 14);
             }));
@@ -86,6 +105,9 @@ public class GameController implements Initializable {
             }));
         MainApp.eventBus.subscribe(EventNames.LEVEL_ADVANCED, e -> Platform.runLater(() ->
             {
+                if (MainApp.sessionService.isHost()) {
+                    armCriticalSnapshot("LEVEL_ADVANCED", MainApp.sessionService.getCurrentLevelIndex());
+                }
                 showFeedback("Nivel " + (((Number) e.getOrDefault("levelIndex", 0)).intValue() + 1), "#8be9fd");
                 spawnBurst(arenaCanvas.getWidth() * 0.5, 200, Color.web("#8be9fd"), 22);
             }));
@@ -95,6 +117,8 @@ public class GameController implements Initializable {
         MainApp.eventBus.subscribe(EventNames.PLAYER_REACHED_EXIT, e -> onReachedExitEvent((String) e.get("playerId")));
         MainApp.eventBus.subscribe(EventNames.SCORE_CHANGED, e -> onScoreChangedEvent(e));
         MainApp.eventBus.subscribe(EventNames.GAME_OVER, e -> {
+            if (gameOverHandled) return;
+            gameOverHandled = true;
             if (MainApp.sessionService.isHost()) broadcastGameOver();
             Platform.runLater(this::onGameOver);
         });
@@ -107,6 +131,12 @@ public class GameController implements Initializable {
             Color burst = pts >= GameConfig.SCORE_COIN_LARGE ? Color.web("#ffa500") : Color.web("#ffd166");
             spawnBurst(worldToScreenX(wx, sx), worldToScreenY(wy, sy), burst, pts >= GameConfig.SCORE_COIN_LARGE ? 12 : 7);
             showFeedback("+" + pts + " moneda!", pts >= GameConfig.SCORE_COIN_LARGE ? "#ffa500" : "#ffd166");
+        }));
+        MainApp.eventBus.subscribe(EventNames.PLAYER_DISCONNECTED, e -> Platform.runLater(() -> {
+            String playerId = String.valueOf(e.getOrDefault("playerId", "?"));
+            peerWarningCounts.merge(playerId, 1, Integer::sum);
+            showFeedback("Conexion perdida: " + playerId, "#ff9f1c");
+            spawnBurst(arenaCanvas.getWidth() * 0.55, 140, Color.web("#ff9f1c"), 12);
         }));
 
         feedbackLabel.setVisible(false);
@@ -148,12 +178,10 @@ public class GameController implements Initializable {
                 double worldX = e.getX() / sx + cameraX;
                 double worldY = e.getY() / sy + cameraY;
                 Player local = getLocalPlayerSnapshot();
-                boolean jump = local != null
+                boolean upwardClick = local != null
                     && (local.getCenterY() - worldY) > GameConfig.MOUSE_JUMP_VERTICAL_THRESHOLD;
-                pendingTargetX = worldX;
-                if (jump) pendingJumpRepeats = 3;
-                inputResendTimer = 0;
-                sendInputPacket(worldX, jump);
+                boolean jump = e.getButton() == MouseButton.SECONDARY || upwardClick;
+                sendInput(worldX, jump);
             });
         });
     }
@@ -185,13 +213,17 @@ public class GameController implements Initializable {
 
                 if (MainApp.udpPeer != null && MainApp.udpPeer.isBound()) pollIncomingMessages();
                 if (!MainApp.sessionService.isHost()) resendPendingInput(dt);
+                if (!MainApp.sessionService.isHost()) sendHeartbeatIfDue(dt);
+                if (MainApp.sessionService.isHost()) expireInactivePeersIfNeeded();
 
                 if (MainApp.sessionService.isHost() && MainApp.hostMatchService != null) {
                     MainApp.hostMatchService.tick(dt);
+                    updateCriticalAckWindow(dt);
                     snapshotTimer += dt;
                     if (snapshotTimer >= (1.0 / GameConfig.SNAPSHOT_RATE_HZ)) {
                         snapshotTimer = 0;
                         Map<String, Object> snapshot = MainApp.sessionService.getSnapshotData();
+                        attachCriticalMetadata(snapshot);
                         snapshot.put("type", MessageSerializer.SNAPSHOT);
                         MainApp.sessionService.updateFromSnapshot(snapshot);
                         MainApp.udpPeer.broadcast(snapshot, MainApp.sessionService.getRemotePeerAddresses());
@@ -233,6 +265,36 @@ public class GameController implements Initializable {
         sendInputPacket(pendingTargetX, jump);
     }
 
+    private void sendHeartbeatIfDue(double dt) {
+        heartbeatTimer += dt;
+        if (heartbeatTimer < GameConfig.CLIENT_HEARTBEAT_SECONDS) return;
+        heartbeatTimer = 0;
+        try {
+            Map<String, Object> msg = serializer.build(
+                MessageSerializer.HEARTBEAT,
+                "playerId", MainApp.sessionService.getLocalPlayerId()
+            );
+            MainApp.udpPeer.send(msg,
+                InetAddress.getByName(MainApp.sessionService.getHostIp()),
+                MainApp.sessionService.getHostPort());
+        } catch (Exception e) {
+            System.err.println("[GameController] Heartbeat error: " + e.getMessage());
+        }
+    }
+
+    private void expireInactivePeersIfNeeded() {
+        List<String> expired = MainApp.sessionService.expireInactivePeers((long) (GameConfig.HOST_PEER_TIMEOUT_SECONDS * 1000));
+        if (expired.isEmpty()) return;
+        for (String playerId : expired) {
+            MainApp.eventBus.publish(EventNames.PLAYER_DISCONNECTED, Map.of("playerId", playerId));
+        }
+        Map<String, Object> snapshot = MainApp.sessionService.getSnapshotData();
+        attachCriticalMetadata(snapshot);
+        snapshot.put("type", MessageSerializer.SNAPSHOT);
+        MainApp.sessionService.updateFromSnapshot(snapshot);
+        MainApp.udpPeer.broadcast(snapshot, MainApp.sessionService.getRemotePeerAddresses());
+    }
+
     private void sendInputPacket(double targetX, boolean jumpRequested) {
         try {
             Map<String, Object> msg = serializer.build(
@@ -269,7 +331,25 @@ public class GameController implements Initializable {
                 boolean jump = Boolean.TRUE.equals(msg.get("jump"));
                 if (playerId != null && targetX != null) {
                     MainApp.sessionService.registerPeerAddress(playerId, sender);
+                    MainApp.sessionService.markPeerSeen(playerId);
+                    MainApp.sessionService.markPlayerConnected(playerId, true);
                     MainApp.hostMatchService.handleInput(playerId, targetX.doubleValue(), jump);
+                }
+            } else if (MessageSerializer.HEARTBEAT.equals(messageType)) {
+                String playerId = (String) msg.get("playerId");
+                if (playerId != null) {
+                    MainApp.sessionService.registerPeerAddress(playerId, sender);
+                    MainApp.sessionService.markPeerSeen(playerId);
+                    MainApp.sessionService.markPlayerConnected(playerId, true);
+                }
+            } else if (MessageSerializer.ACK.equals(messageType)) {
+                String playerId = (String) msg.get("playerId");
+                String criticalType = (String) msg.get("criticalType");
+                Number criticalVersion = (Number) msg.get("criticalVersion");
+                if (playerId != null && criticalType != null && criticalVersion != null
+                    && criticalType.equals(pendingCriticalType)
+                    && criticalVersion.intValue() == pendingCriticalVersion) {
+                    criticalAckedPeers.add(playerId);
                 }
             } else if (MessageSerializer.DISCONNECT.equals(messageType)) {
                 String playerId = (String) msg.get("playerId");
@@ -285,7 +365,11 @@ public class GameController implements Initializable {
 
         if (MessageSerializer.SNAPSHOT.equals(messageType) || MessageSerializer.GAME_OVER.equals(messageType)) {
             MainApp.sessionService.updateFromSnapshot(msg);
-            if (MessageSerializer.GAME_OVER.equals(messageType)) Platform.runLater(this::onGameOver);
+            acknowledgeCriticalSnapshotIfNeeded(msg);
+            if (MessageSerializer.GAME_OVER.equals(messageType) && !gameOverHandled) {
+                gameOverHandled = true;
+                Platform.runLater(this::onGameOver);
+            }
         }
     }
 
@@ -293,7 +377,7 @@ public class GameController implements Initializable {
         if (MainApp.udpPeer == null || !MainApp.udpPeer.isBound()) return;
         Map<String, Object> payload = MainApp.sessionService.getSnapshotData();
         payload.put("type", MessageSerializer.GAME_OVER);
-        MainApp.udpPeer.broadcast(payload, MainApp.sessionService.getRemotePeerAddresses());
+        MainApp.udpPeer.broadcastBurst(payload, MainApp.sessionService.getRemotePeerAddresses(), 8, 60);
     }
 
     private void render() {
@@ -377,6 +461,24 @@ public class GameController implements Initializable {
             gc.fillOval(x + drawW - 18, y + drawH / 2.0 - 6, 8, 8);
         }
 
+        for (PushBlock block : MainApp.sessionService.getPushBlocksSnapshot()) {
+            double x = worldToScreenX(block.getX(), scaleX);
+            double y = worldToScreenY(block.getY(), scaleY);
+            double drawW = block.getWidth() * scaleX;
+            double drawH = block.getHeight() * scaleY;
+            gc.setFill(Color.web("#8b6b4a"));
+            gc.fillRoundRect(x + 3, y + 4, drawW, drawH, 10, 10);
+            gc.setFill(Color.web("#b08968"));
+            gc.fillRoundRect(x, y, drawW, drawH, 10, 10);
+            gc.setStroke(Color.web("#e6ccb2"));
+            gc.setLineWidth(2);
+            gc.strokeRoundRect(x, y, drawW, drawH, 10, 10);
+            gc.setStroke(Color.web("#7f5539"));
+            gc.setLineWidth(2);
+            gc.strokeLine(x + drawW * 0.2, y + drawH * 0.2, x + drawW * 0.8, y + drawH * 0.8);
+            gc.strokeLine(x + drawW * 0.8, y + drawH * 0.2, x + drawW * 0.2, y + drawH * 0.8);
+        }
+
         long nowMs = System.currentTimeMillis();
         for (CollectibleItem coin : MainApp.sessionService.getCoinsSnapshot()) {
             if (!coin.isActive()) continue;
@@ -418,11 +520,11 @@ public class GameController implements Initializable {
             double ddx = b.x - a.x;
             double ddy = b.y - a.y;
             double dist = Math.sqrt(ddx * ddx + ddy * ddy);
-            double tension = Math.max(0.0, Math.min(1.0, (dist - GameConfig.THREAD_MAX_DISTANCE * 0.6) / (GameConfig.THREAD_MAX_DISTANCE * 0.4)));
+            double tension = threadTension(dist);
             Color glowColor = Color.web("#4cc9f0").interpolate(Color.web("#ef476f"), tension);
             gc.setStroke(glowColor.deriveColor(0, 1, 1, 0.27));
             double midX = (a.x + b.x) / 2.0;
-            double sag = Math.min(16, Math.abs(b.x - a.x) * 0.05);
+            double sag = Math.min(22, Math.abs(b.x - a.x) * 0.06) * (1.05 - tension * 0.55);
             gc.beginPath();
             gc.moveTo(worldToScreenX(a.centerX(players.get(i).getWidth()), scaleX), worldToScreenY(a.centerY(players.get(i).getHeight()), scaleY));
             gc.quadraticCurveTo(worldToScreenX(midX, scaleX), worldToScreenY((a.y + b.y) / 2.0 + sag, scaleY),
@@ -437,11 +539,11 @@ public class GameController implements Initializable {
             double ddx = b.x - a.x;
             double ddy = b.y - a.y;
             double dist = Math.sqrt(ddx * ddx + ddy * ddy);
-            double tension = Math.max(0.0, Math.min(1.0, (dist - GameConfig.THREAD_MAX_DISTANCE * 0.6) / (GameConfig.THREAD_MAX_DISTANCE * 0.4)));
+            double tension = threadTension(dist);
             Color threadColor = Color.web("#80ed99").interpolate(Color.web("#ef476f"), tension);
-            gc.setStroke(threadColor.deriveColor(0, 1, 1, 0.8));
+            gc.setStroke(threadColor.deriveColor(0, 1, 1, 0.88));
             double midX = (a.x + b.x) / 2.0;
-            double sag = Math.min(16, Math.abs(b.x - a.x) * 0.05);
+            double sag = Math.min(22, Math.abs(b.x - a.x) * 0.06) * (1.05 - tension * 0.55);
             gc.beginPath();
             gc.moveTo(worldToScreenX(a.centerX(players.get(i).getWidth()), scaleX), worldToScreenY(a.centerY(players.get(i).getHeight()), scaleY));
             gc.quadraticCurveTo(worldToScreenX(midX, scaleX), worldToScreenY((a.y + b.y) / 2.0 + sag, scaleY),
@@ -476,7 +578,7 @@ public class GameController implements Initializable {
             double y = worldToScreenY(state.y, scaleY);
             double drawW = player.getWidth() * scaleX;
             double drawH = player.getHeight() * scaleY;
-            double stretch = Math.max(-0.18, Math.min(0.22, player.getVy() / 900.0));
+            double stretch = state.stretch;
             double renderH = drawH * (1.0 + stretch);
             double renderW = drawW * (1.0 - stretch * 0.55);
             double adjustedX = x + (drawW - renderW) / 2.0;
@@ -582,25 +684,55 @@ public class GameController implements Initializable {
 
     private void refreshUI() {
         playersList.getItems().clear();
+        long globalSnapshotAgeMs = Math.round(timeSinceLastSnapshot * 1000.0);
+        String localId = MainApp.sessionService.getLocalPlayerId();
         for (Player player : MainApp.scoreBoardObserver.getEntries()) {
             String status = !player.isConnected() ? "desconectado"
                 : player.isAtExit() ? "salida"
                 : player.isAlive() ? "activo" : "caido";
+            String netStatus;
+            int warnings = peerWarningCounts.getOrDefault(player.getId(), 0);
+            if (!player.isConnected()) {
+                netStatus = "sin señal";
+            } else if (MainApp.sessionService.isHost()) {
+                if (player.getId().equals(localId)) {
+                    netStatus = "host local";
+                } else {
+                    Long ageMs = MainApp.sessionService.getPeerAgeMillis(player.getId());
+                    if (ageMs != null && ageMs > (long) (GameConfig.SNAPSHOT_STALE_WARNING_SECONDS * 1000)) {
+                        if (stalePeers.add(player.getId())) {
+                            peerWarningCounts.merge(player.getId(), 1, Integer::sum);
+                            warnings = peerWarningCounts.getOrDefault(player.getId(), 0);
+                        }
+                    } else {
+                        stalePeers.remove(player.getId());
+                    }
+                    netStatus = ageMs == null ? "udp ?" : "udp " + ageMs + " ms";
+                }
+            } else {
+                netStatus = player.getId().equals(localId) ? "cliente local" : "sync " + globalSnapshotAgeMs + " ms";
+            }
             playersList.getItems().add(
-                player.getName() + " · " + player.getScore() + " pts · " + status + " · caidas " + player.getDeaths());
+                player.getName() + " · " + player.getScore() + " pts · " + status
+                    + " · " + netStatus + " · warn " + warnings + " · caidas " + player.getDeaths());
         }
 
         eventLog.getItems().setAll(MainApp.eventLogObserver.getEntries());
         Door door = MainApp.sessionService.getDoorSnapshot();
+        double maxThreadDistance = maxVisibleThreadDistance(MainApp.sessionService.getPlayersSnapshot().stream()
+            .filter(Player::isConnected)
+            .toList());
         levelLabel.setText("Nivel " + (MainApp.sessionService.getCurrentLevelIndex() + 1) + "/" + Math.max(1, MainApp.sessionService.getTotalLevels()));
         roomStatusLabel.setText(door != null && door.isOpen()
             ? "Puerta abierta: avancen juntos hacia la salida"
             : switch (MainApp.sessionService.getCurrentLevelIndex()) {
                 case 0 -> "Nivel 1: activen el boton y crucen juntos";
                 case 1 -> "Nivel 2: mantengan el hilo corto en los saltos";
-                default -> "Nivel 3: coordinen el ritmo y no se separen";
+                case 2 -> "Nivel 3: coordinen el ritmo y cuiden las caidas";
+                case 3 -> "Nivel 4: agrupense, recojan monedas y avancen juntos";
+                default -> "Nivel 5: cierre final, puntaje alto y grupo unido";
             });
-        threadLabel.setText("Hilo maximo: " + (int) GameConfig.THREAD_MAX_DISTANCE + " px");
+        threadLabel.setText(threadText(maxThreadDistance));
         networkLabel.setText(connectionText());
     }
 
@@ -754,6 +886,7 @@ public class GameController implements Initializable {
     }
 
     private void updateRenderStates(List<Player> players, double dt) {
+        double nowSeconds = System.nanoTime() / 1_000_000_000.0;
         for (Player player : players) {
             RenderState state = renderStates.computeIfAbsent(player.getId(), ignored -> new RenderState(player.getX(), player.getY()));
             if (MainApp.sessionService.isHost()) {
@@ -763,20 +896,80 @@ public class GameController implements Initializable {
                 state.vy = player.getVy();
             } else {
                 boolean isLocalClientPlayer = player.getId().equals(MainApp.sessionService.getLocalPlayerId());
-                double predictionWindow = Math.min(
-                    isLocalClientPlayer ? GameConfig.LOCAL_CLIENT_PREDICTION_SECONDS : GameConfig.REMOTE_PREDICTION_SECONDS,
-                    lastSnapshotAgeForRender
-                );
-                double targetX = player.getX() + player.getVx() * predictionWindow;
-                double targetY = player.getY() + player.getVy() * predictionWindow;
-                double blend = 1.0 - Math.pow(1.0 - GameConfig.REMOTE_SMOOTHING, Math.max(1.0, dt * 60.0));
-                state.x += (targetX - state.x) * blend;
-                state.y += (targetY - state.y) * blend;
-                state.vx += (player.getVx() - state.vx) * blend;
-                state.vy += (player.getVy() - state.vy) * blend;
+                if (isLocalClientPlayer) {
+                    double predictionWindow = Math.min(GameConfig.LOCAL_CLIENT_PREDICTION_SECONDS, lastSnapshotAgeForRender);
+                    double targetX = player.getX() + player.getVx() * predictionWindow;
+                    double targetY = player.getY() + player.getVy() * predictionWindow;
+                    double blend = 1.0 - Math.pow(1.0 - GameConfig.REMOTE_SMOOTHING, Math.max(1.0, dt * 60.0));
+                    state.x += (targetX - state.x) * blend;
+                    state.y += (targetY - state.y) * blend;
+                    state.vx += (player.getVx() - state.vx) * blend;
+                    state.vy += (player.getVy() - state.vy) * blend;
+                } else {
+                    SnapshotSample interpolated = sampleForRender(player, nowSeconds);
+                    double targetX = interpolated != null ? interpolated.x : player.getX();
+                    double targetY = interpolated != null ? interpolated.y : player.getY();
+                    double targetVx = interpolated != null ? interpolated.vx : player.getVx();
+                    double targetVy = interpolated != null ? interpolated.vy : player.getVy();
+                    double blend = 1.0 - Math.pow(1.0 - GameConfig.REMOTE_SMOOTHING, Math.max(1.0, dt * 60.0));
+                    state.x += (targetX - state.x) * blend;
+                    state.y += (targetY - state.y) * blend;
+                    state.vx += (targetVx - state.vx) * blend;
+                    state.vy += (targetVy - state.vy) * blend;
+                }
             }
+            double targetStretch = Math.max(-0.16, Math.min(0.19, state.vy / 920.0));
+            double stretchBlend = 1.0 - Math.pow(1.0 - GameConfig.VISUAL_STRETCH_SMOOTHING, Math.max(1.0, dt * 60.0));
+            state.stretch += (targetStretch - state.stretch) * stretchBlend;
         }
         renderStates.keySet().removeIf(id -> players.stream().noneMatch(player -> player.getId().equals(id)));
+        snapshotBuffers.keySet().removeIf(id -> players.stream().noneMatch(player -> player.getId().equals(id)));
+    }
+
+    private void captureSnapshotSamples() {
+        if (MainApp.sessionService.isHost()) return;
+        double nowSeconds = System.nanoTime() / 1_000_000_000.0;
+        for (Player player : MainApp.sessionService.getPlayersSnapshot()) {
+            Deque<SnapshotSample> buffer = snapshotBuffers.computeIfAbsent(player.getId(), ignored -> new ArrayDeque<>());
+            buffer.addLast(new SnapshotSample(player.getX(), player.getY(), player.getVx(), player.getVy(), nowSeconds));
+            while (buffer.size() > GameConfig.MAX_BUFFERED_SNAPSHOTS) {
+                buffer.removeFirst();
+            }
+        }
+    }
+
+    private SnapshotSample sampleForRender(Player player, double nowSeconds) {
+        Deque<SnapshotSample> buffer = snapshotBuffers.get(player.getId());
+        if (buffer == null || buffer.isEmpty()) return null;
+
+        double renderTime = nowSeconds - GameConfig.SNAPSHOT_INTERPOLATION_DELAY_SECONDS;
+        SnapshotSample previous = null;
+        SnapshotSample next = null;
+        for (SnapshotSample sample : buffer) {
+            if (sample.timestamp <= renderTime) {
+                previous = sample;
+                continue;
+            }
+            next = sample;
+            break;
+        }
+
+        if (previous != null && next != null && next.timestamp > previous.timestamp) {
+            double alpha = (renderTime - previous.timestamp) / (next.timestamp - previous.timestamp);
+            alpha = Math.max(0.0, Math.min(1.0, alpha));
+            return SnapshotSample.interpolate(previous, next, alpha);
+        }
+
+        SnapshotSample reference = previous != null ? previous : buffer.peekFirst();
+        if (reference == null) return null;
+        double prediction = Math.min(GameConfig.REMOTE_PREDICTION_SECONDS, Math.max(0.0, renderTime - reference.timestamp));
+        return new SnapshotSample(
+            reference.x + reference.vx * prediction,
+            reference.y + reference.vy * prediction,
+            reference.vx,
+            reference.vy,
+            renderTime
+        );
     }
 
     private void updateParticles(double dt) {
@@ -822,11 +1015,90 @@ public class GameController implements Initializable {
         return "UDP inestable · " + ms + " ms";
     }
 
+    private double maxVisibleThreadDistance(List<Player> players) {
+        double max = 0;
+        for (int i = 0; i < players.size() - 1; i++) {
+            for (int j = i + 1; j < players.size(); j++) {
+                double dx = players.get(j).getCenterX() - players.get(i).getCenterX();
+                double dy = players.get(j).getCenterY() - players.get(i).getCenterY();
+                max = Math.max(max, Math.sqrt(dx * dx + dy * dy));
+            }
+        }
+        return max;
+    }
+
+    private double threadTension(double distance) {
+        return Math.max(0.0, Math.min(1.0,
+            (distance - GameConfig.THREAD_REST_DISTANCE) / Math.max(1.0, GameConfig.THREAD_HARD_LIMIT - GameConfig.THREAD_REST_DISTANCE)));
+    }
+
+    private String threadText(double maxDistance) {
+        String state;
+        if (maxDistance < GameConfig.THREAD_TENSE_DISTANCE) {
+            state = "relajado";
+        } else if (maxDistance < GameConfig.THREAD_CRITICAL_DISTANCE) {
+            state = "tenso";
+        } else {
+            state = "critico";
+        }
+        return "Hilo " + state + " · " + (int) maxDistance + "/" + (int) GameConfig.THREAD_HARD_LIMIT + " px";
+    }
+
+    private void armCriticalSnapshot(String type, int version) {
+        pendingCriticalType = type;
+        pendingCriticalVersion = version;
+        pendingCriticalAge = 0;
+        criticalAckedPeers.clear();
+    }
+
+    private void updateCriticalAckWindow(double dt) {
+        if (pendingCriticalType == null) return;
+        pendingCriticalAge += dt;
+        List<String> waiting = MainApp.sessionService.getPlayersSnapshot().stream()
+            .filter(Player::isConnected)
+            .map(Player::getId)
+            .filter(id -> !id.equals(MainApp.sessionService.getLocalPlayerId()))
+            .filter(id -> !criticalAckedPeers.contains(id))
+            .toList();
+        if (waiting.isEmpty() || pendingCriticalAge >= GameConfig.CRITICAL_ACK_TIMEOUT_SECONDS) {
+            pendingCriticalType = null;
+            pendingCriticalVersion = 0;
+            pendingCriticalAge = 0;
+            criticalAckedPeers.clear();
+        }
+    }
+
+    private void attachCriticalMetadata(Map<String, Object> snapshot) {
+        if (pendingCriticalType == null) return;
+        snapshot.put("criticalType", pendingCriticalType);
+        snapshot.put("criticalVersion", pendingCriticalVersion);
+    }
+
+    private void acknowledgeCriticalSnapshotIfNeeded(Map<String, Object> snapshot) {
+        String criticalType = (String) snapshot.get("criticalType");
+        Number criticalVersion = (Number) snapshot.get("criticalVersion");
+        if (criticalType == null || criticalVersion == null || MainApp.sessionService.isHost()) return;
+        try {
+            Map<String, Object> ack = serializer.build(
+                MessageSerializer.ACK,
+                "playerId", MainApp.sessionService.getLocalPlayerId(),
+                "criticalType", criticalType,
+                "criticalVersion", criticalVersion.intValue()
+            );
+            MainApp.udpPeer.send(ack,
+                InetAddress.getByName(MainApp.sessionService.getHostIp()),
+                MainApp.sessionService.getHostPort());
+        } catch (Exception e) {
+            System.err.println("[GameController] Ack error: " + e.getMessage());
+        }
+    }
+
     private static final class RenderState {
         double x;
         double y;
         double vx;
         double vy;
+        double stretch;
 
         RenderState(double x, double y) {
             this.x = x;
@@ -835,6 +1107,32 @@ public class GameController implements Initializable {
 
         double centerX(double width) { return x + width / 2.0; }
         double centerY(double height) { return y + height / 2.0; }
+    }
+
+    private static final class SnapshotSample {
+        final double x;
+        final double y;
+        final double vx;
+        final double vy;
+        final double timestamp;
+
+        SnapshotSample(double x, double y, double vx, double vy, double timestamp) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.timestamp = timestamp;
+        }
+
+        static SnapshotSample interpolate(SnapshotSample a, SnapshotSample b, double alpha) {
+            return new SnapshotSample(
+                a.x + (b.x - a.x) * alpha,
+                a.y + (b.y - a.y) * alpha,
+                a.vx + (b.vx - a.vx) * alpha,
+                a.vy + (b.vy - a.vy) * alpha,
+                a.timestamp + (b.timestamp - a.timestamp) * alpha
+            );
+        }
     }
 
     private static final class Particle {

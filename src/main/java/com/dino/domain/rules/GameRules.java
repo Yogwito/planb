@@ -6,6 +6,7 @@ import com.dino.domain.entities.Door;
 import com.dino.domain.entities.ExitZone;
 import com.dino.domain.entities.PlatformTile;
 import com.dino.domain.entities.Player;
+import com.dino.domain.entities.PushBlock;
 
 import java.util.Collection;
 import java.util.List;
@@ -33,6 +34,24 @@ public final class GameRules {
         if (a == null || b == null || a == b) return false;
         return intersects(a.getX(), a.getY(), a.getWidth(), a.getHeight(),
             b.getX(), b.getY(), b.getWidth(), b.getHeight());
+    }
+
+    public static boolean intersects(Player player, PushBlock block) {
+        if (player == null || block == null) return false;
+        return intersects(player.getX(), player.getY(), player.getWidth(), player.getHeight(),
+            block.getX(), block.getY(), block.getWidth(), block.getHeight());
+    }
+
+    public static boolean intersects(PushBlock block, PlatformTile platform) {
+        if (block == null || platform == null) return false;
+        return intersects(block.getX(), block.getY(), block.getWidth(), block.getHeight(),
+            platform.getX(), platform.getY(), platform.getWidth(), platform.getHeight());
+    }
+
+    public static boolean intersects(PushBlock block, Door door) {
+        if (block == null || door == null || door.isOpen()) return false;
+        return intersects(block.getX(), block.getY(), block.getWidth(), block.getHeight(),
+            door.getX(), door.getY(), door.getWidth(), door.getHeight());
     }
 
     public static boolean isPressingButton(Player player, ButtonSwitch button) {

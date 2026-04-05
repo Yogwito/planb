@@ -4,12 +4,13 @@ Juego multijugador 2D con Java, JavaFX y sockets UDP. Dos o más jugadores compa
 
 ## Reglas del MVP
 
-1. El movimiento temporal usa `flechas izquierda/derecha` y `Space` para saltar.
+1. El control principal usa `mouse`: click izquierdo para moverte y click derecho, o un click por encima del personaje, para saltar. Como respaldo, también funcionan `flechas izquierda/derecha` y `Space`.
 2. Los jugadores no pueden separarse más que la distancia máxima del `thread`, y además el cable actúa como resorte.
-3. Un jugador debe activar el botón para abrir la puerta.
-4. Si un jugador cae al vacío, la sala se reinicia para todos.
-5. La campaña avanza por varias salas; la partida termina cuando todos los jugadores conectados completan la última salida.
-6. Gana el jugador con más puntos; en empate, gana quien llegó antes y con menos caídas.
+3. Los jugadores pueden interactuar con elementos del nivel y empujar cajas/bloques móviles sincronizados por UDP.
+4. Un jugador debe activar el botón para abrir la puerta.
+5. Si un jugador cae al vacío, la sala se reinicia para todos.
+6. La campaña avanza por varias salas; la partida termina cuando todos los jugadores conectados completan la última salida.
+7. Gana el jugador con más puntos; en empate, gana quien llegó antes y con menos caídas.
 
 ## Puntaje
 
@@ -54,6 +55,14 @@ Juego multijugador 2D con Java, JavaFX y sockets UDP. Dos o más jugadores compa
 - `D`:
   - Controladores dependen de servicios centrales (`SessionService`, `EventBus`) y no de implementaciones de bajo nivel del socket.
 
+## Buenas practicas aplicadas
+
+- Configuracion centralizada en `GameConfig` para evitar numeros magicos.
+- Reglas del juego concentradas en `GameRules` para no duplicar logica entre host y render.
+- Snapshots defensivos en `SessionService` para no exponer estado mutable directo a la UI.
+- Simulacion critica concentrada en `HostMatchService`, con el cliente limitado a input y render.
+- Suite automatizada con `mvn test` para validar reglas base, serializacion y loop autoritativo.
+
 ## Comunicación
 
 - La comunicación entre instancias es exclusivamente por `UDP`.
@@ -64,6 +73,42 @@ Juego multijugador 2D con Java, JavaFX y sockets UDP. Dos o más jugadores compa
   - actualiza puntajes,
   - difunde snapshots.
 - El cliente suaviza visualmente a los jugadores remotos, pero no altera el estado lógico recibido del host.
+- Topología usada:
+  - un jugador crea la sala y actúa como `host`;
+  - los demás clientes se conectan directamente por UDP al host;
+  - el host redistribuye snapshots al resto.
+- Esto mantiene una comunicación distribuida real entre computadores distintos, sin TCP y sin servidor externo.
+
+## Qué mostrar en la sustentación
+
+- Dos instancias en pantallas diferentes, cada una con su propio nombre.
+- Movimiento en vivo por UDP.
+- Interacción con botón, puerta, monedas y bloque empujable.
+- Puntaje en tiempo real.
+- Sonidos automáticos por salto, colisión, puntos, tensión del hilo, reinicio y fin.
+- Pantalla final con nombres, puntajes, tiempo total y ganador.
+
+## Base para el PDF de entrega
+
+El documento puede salir directamente de esta estructura:
+
+1. Descripcion del juego y objetivo cooperativo/competitivo.
+2. Reglas del juego y sistema de puntaje.
+3. Arquitectura por capas: `presentation`, `application`, `domain`, `infrastructure`.
+4. Patrones usados: `Observer` y `Policy/GameRules`.
+5. Comunicacion UDP host autoritativo entre peers reales.
+6. Aplicacion concreta de SOLID.
+7. Dificultades y soluciones:
+   - sincronizacion UDP,
+   - suavizado visual del remoto,
+   - tension del hilo,
+   - reinicios y transiciones criticas.
+8. Pantallazos:
+   - menu inicial,
+   - lobby,
+   - partida en vivo,
+   - puerta/boton/monedas/caja empujable,
+   - pantalla final.
 
 ## Flujo de pantallas
 

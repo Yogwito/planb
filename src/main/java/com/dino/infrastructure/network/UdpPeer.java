@@ -36,6 +36,23 @@ public class UdpPeer {
         }
     }
 
+    public void broadcastBurst(Map<String, Object> data, List<InetSocketAddress> addrs, int repeats, int delayMs) {
+        if (repeats <= 0) return;
+        Thread.ofPlatform().daemon(true).start(() -> {
+            for (int i = 0; i < repeats; i++) {
+                broadcast(data, addrs);
+                if (i + 1 < repeats) {
+                    try {
+                        Thread.sleep(Math.max(1, delayMs));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
     @SuppressWarnings("unchecked")
     public Optional<Map.Entry<Map<String, Object>, InetSocketAddress>> receive() {
         if (socket == null || socket.isClosed()) return Optional.empty();

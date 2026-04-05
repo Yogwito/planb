@@ -18,6 +18,7 @@ public class MessageSerializer {
     public static final String SNAPSHOT       = "SNAPSHOT";
     public static final String GAME_EVENT     = "GAME_EVENT";
     public static final String HEARTBEAT      = "HEARTBEAT";
+    public static final String ACK            = "ACK";
     public static final String DISCONNECT     = "DISCONNECT";
     public static final String GAME_OVER      = "GAME_OVER";
 

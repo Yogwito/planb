@@ -51,6 +51,7 @@
                     <target>21</target>
                 </configuration>
             </plugin>
+
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
@@ -59,13 +60,12 @@
                     <mainClass>com.dino.MainApp</mainClass>
                     <options>
                         <option>--add-opens=javafx.graphics/com.sun.javafx.tk=ALL-UNNAMED</option>
+                        <option>-Dprism.allowhidpi=false</option>
+                        <option>-Dglass.win.uiScale=1.0</option>
                     </options>
-                    <jvmArgs>
-                        <jvmArg>-Dprism.allowhidpi=false</jvmArg>
-                        <jvmArg>-Dglass.win.uiScale=1.0</jvmArg>
-                    </jvmArgs>
                 </configuration>
             </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>

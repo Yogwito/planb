@@ -9,9 +9,20 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Observador que mantiene una vista ordenada del ranking actual.
+ *
+ * <p>Consume snapshots ya generados por el host y construye una lista ligera de
+ * jugadores ordenada por puntaje, orden de llegada y caídas.</p>
+ */
 public class ScoreBoardObserver {
     private final List<Player> entries = new ArrayList<>();
 
+    /**
+     * Suscribe el observador a snapshots y al fin de partida.
+     *
+     * @param eventBus bus global del juego
+     */
     public ScoreBoardObserver(EventBus eventBus) {
         eventBus.subscribe(EventNames.SNAPSHOT_RECEIVED, this::onSnapshot);
         eventBus.subscribe(EventNames.GAME_OVER, this::onSnapshot);
@@ -45,6 +56,11 @@ public class ScoreBoardObserver {
         });
     }
 
+    /**
+     * Retorna la clasificación actual en modo solo lectura.
+     *
+     * @return ranking observable por la UI
+     */
     public List<Player> getEntries() {
         return Collections.unmodifiableList(entries);
     }

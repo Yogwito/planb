@@ -16,6 +16,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Simulación autoritativa del host.
+ *
+ * <p>Recibe input de todos los jugadores, avanza la física, resuelve colisiones,
+ * actualiza puntaje y decide transiciones críticas como reinicio de sala,
+ * avance de nivel y fin de campaña. Es el corazón lógico de la partida: los
+ * clientes no duplican esta lógica, solo la representan visualmente.</p>
+ */
 public class HostMatchService {
     private static final double COLLISION_SOUND_COOLDOWN = 0.12;
     private static final double THREAD_SOUND_COOLDOWN = 0.16;
@@ -29,11 +37,18 @@ public class HostMatchService {
     private double collisionSoundCooldownRemaining = 0;
     private double threadSoundCooldownRemaining = 0;
 
+    /**
+     * Construye la simulación del host con acceso al estado compartido y al bus
+     * de eventos.
+     */
     public HostMatchService(SessionService sessionService, EventBus eventBus) {
         this.sessionService = sessionService;
         this.eventBus = eventBus;
     }
 
+    /**
+     * Inicializa el mundo desde el primer nivel y reinicia contadores globales.
+     */
     public void initWorld() {
         sessionService.setCurrentLevelIndex(0);
         sessionService.setTotalLevels(GameConfig.TOTAL_LEVELS);
@@ -48,6 +63,13 @@ public class HostMatchService {
         loadLevel(0, true);
     }
 
+    /**
+     * Registra el último objetivo horizontal y la intención de salto de un jugador.
+     *
+     * @param playerId identificador del jugador
+     * @param targetX objetivo horizontal en coordenadas de mundo
+     * @param jumpPressed indica si el jugador solicitó salto
+     */
     public void handleInput(String playerId, double targetX, boolean jumpPressed) {
         InputState state = playerInputs.computeIfAbsent(playerId, ignored -> new InputState());
         state.targetX = targetX;
@@ -55,6 +77,15 @@ public class HostMatchService {
         if (jumpPressed) state.jumpQueued = true;
     }
 
+    /**
+     * Avanza una iteración de simulación del host.
+     *
+     * <p>El orden importa: primero se actualiza movimiento individual, luego se
+     * aplica el hilo, después colisiones, objetos, puntaje y por último
+     * transiciones de nivel o reinicios.</p>
+     *
+     * @param dt tiempo transcurrido en segundos desde el tick anterior
+     */
     public void tick(double dt) {
         if (gameOver || !sessionService.isGameRunning()) return;
         sessionService.setElapsedTime(sessionService.getElapsedTime() + dt);
@@ -91,6 +122,12 @@ public class HostMatchService {
         }
     }
 
+    /**
+     * Actualiza movimiento, salto, gravedad y colisiones base de un jugador.
+     *
+     * <p>Incluye control horizontal por objetivo, coyote time y jump buffer para
+     * que la sensación de control sea menos rígida.</p>
+     */
     private void updatePlayer(Player player, double dt) {
         InputState input = playerInputs.computeIfAbsent(player.getId(), ignored -> new InputState());
         double previousX = player.getX();
@@ -273,6 +310,7 @@ public class HostMatchService {
             double relativeVelocity = (b.getVx() - a.getVx()) * nx + (b.getVy() - a.getVy()) * ny;
             double springForce = stretch * GameConfig.THREAD_PULL_FACTOR;
             double dampingForce = relativeVelocity * GameConfig.THREAD_DAMPING;
+            // El hilo funciona como resorte amortiguado: corrige sin teletransportar.
             double pull = Math.min(Math.max(0, (springForce - dampingForce) * dt), stretch * 0.65);
 
             double aMobility = a.isGrounded() ? 0.42 : 0.58;
@@ -434,6 +472,7 @@ public class HostMatchService {
     }
 
     private void updatePushBlocks(List<Player> players, double dt) {
+        // Los bloques se simulan solo en el host y luego se replican por snapshot.
         for (PushBlock block : sessionService.getPushBlocks()) {
             block.setVy(block.getVy() + GameConfig.PUSH_BLOCK_GRAVITY * dt);
 
@@ -539,6 +578,11 @@ public class HostMatchService {
         }
     }
 
+    /**
+     * Reinicia la sala actual completa para todos los jugadores conectados.
+     *
+     * @param reason texto corto para UI y debug
+     */
     private void resetRoom(String reason) {
         sessionService.setRoomResetCount(sessionService.getRoomResetCount() + 1);
         sessionService.setRoomResetReason(reason);
@@ -546,6 +590,9 @@ public class HostMatchService {
         eventBus.publish(EventNames.ROOM_RESET, Map.of("reason", reason));
     }
 
+    /**
+     * Avanza al siguiente nivel o finaliza la campaña si era el último.
+     */
     private void advanceLevelOrFinish() {
         int nextLevel = sessionService.getCurrentLevelIndex() + 1;
         if (nextLevel >= sessionService.getTotalLevels()) {
@@ -563,6 +610,12 @@ public class HostMatchService {
         eventBus.publish(EventNames.LEVEL_ADVANCED, Map.of("levelIndex", nextLevel));
     }
 
+    /**
+     * Carga la geometría y objetos de una sala concreta.
+     *
+     * @param levelIndex índice del nivel a cargar
+     * @param resetScores si {@code true}, también reinicia puntajes y caídas
+     */
     private void loadLevel(int levelIndex, boolean resetScores) {
         sessionService.setCurrentLevelIndex(levelIndex);
         sessionService.getPlatforms().clear();

@@ -18,6 +18,13 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.ResourceBundle;
 
+/**
+ * Controlador de la pantalla final.
+ *
+ * <p>Presenta el ranking consolidado al terminar la campaña, mostrando ganador,
+ * puntajes, caídas y tiempo total. No recalcula la simulación; solo consume el
+ * último estado almacenado en {@link MainApp#sessionService}.</p>
+ */
 public class GameOverController implements Initializable {
     @FXML private TableView<Player> resultsTable;
     @FXML private TableColumn<Player, String> posColumn;
@@ -26,6 +33,9 @@ public class GameOverController implements Initializable {
     @FXML private Label winnerLabel;
     @FXML private Label totalTimeLabel;
 
+    /**
+     * Carga la tabla final y resalta al ganador.
+     */
     @Override
     public void initialize(URL url, ResourceBundle rb) {
         List<Player> sorted = new ArrayList<>(MainApp.sessionService.getPlayersSnapshot());
@@ -50,6 +60,9 @@ public class GameOverController implements Initializable {
         totalTimeLabel.setText(String.format("Tiempo total: %.1fs", MainApp.sessionService.getElapsedTime()));
     }
 
+    /**
+     * Vuelve al menú inicial y reinicia por completo el estado global.
+     */
     @FXML
     public void onVolverAlMenu() {
         MainApp.resetRuntimeState();

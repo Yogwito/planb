@@ -41,6 +41,13 @@ import java.util.Map;
 import java.util.ResourceBundle;
 import java.util.Set;
 
+/**
+ * Controlador principal de la partida.
+ *
+ * <p>Combina render JavaFX, captura de input, recepción/envío UDP y feedback en
+ * tiempo real. El host ejecuta además el loop autoritativo; los clientes solo
+ * envían input y representan snapshots.</p>
+ */
 public class GameController implements Initializable {
     @FXML private Canvas arenaCanvas;
     @FXML private Label timerLabel;
@@ -79,6 +86,9 @@ public class GameController implements Initializable {
     private final Map<String, Deque<SnapshotSample>> snapshotBuffers = new HashMap<>();
     private final List<Particle> particles = new ArrayList<>();
 
+    /**
+     * Registra todos los listeners de UI y eventos necesarios al abrir la partida.
+     */
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         MainApp.eventBus.subscribe(EventNames.SNAPSHOT_RECEIVED, e -> {
@@ -144,6 +154,12 @@ public class GameController implements Initializable {
         startGameLoop();
     }
 
+    /**
+     * Instala controles de teclado de respaldo y el control principal por mouse.
+     *
+     * <p>El requisito académico pide mouse como entrada principal; el teclado se
+     * conserva únicamente como fallback temporal durante pruebas.</p>
+     */
     private void installKeyboardHandlers() {
         Platform.runLater(() -> {
             Scene scene = arenaCanvas.getScene();
@@ -173,6 +189,8 @@ public class GameController implements Initializable {
                 scene.getRoot().requestFocus();
             }
             arenaCanvas.setOnMousePressed(e -> {
+                // El mouse se traduce a coordenadas del mundo usando la cámara
+                // actual, para que host y cliente apunten al mismo sistema.
                 double sx = arenaCanvas.getWidth() / getViewportWorldWidth();
                 double sy = arenaCanvas.getHeight() / getViewportWorldHeight();
                 double worldX = e.getX() / sx + cameraX;
@@ -186,6 +204,9 @@ public class GameController implements Initializable {
         });
     }
 
+    /**
+     * Traduce el teclado de respaldo a un objetivo horizontal equivalente.
+     */
     private void updateMovementTarget(boolean jumpRequested) {
         Player local = getLocalPlayerSnapshot();
         if (local == null) return;
@@ -199,6 +220,13 @@ public class GameController implements Initializable {
         sendInput(targetX, jumpRequested);
     }
 
+    /**
+     * Arranca el bucle principal de juego en JavaFX.
+     *
+     * <p>Este bucle integra red, simulación del host, cámara, partículas, HUD y
+     * render. Los cambios de escena y etiquetas sensibles a JavaFX se delegan con
+     * {@link Platform#runLater(Runnable)} cuando llegan desde otros hilos.</p>
+     */
     private void startGameLoop() {
         gameLoop = new AnimationTimer() {
             @Override
@@ -241,6 +269,12 @@ public class GameController implements Initializable {
         gameLoop.start();
     }
 
+    /**
+     * Envía input local a la ruta correcta según el rol actual.
+     *
+     * <p>Si esta instancia es host, la orden entra directo a la simulación
+     * local. Si es cliente, se serializa como mensaje UDP.</p>
+     */
     private void sendInput(double targetX, boolean jumpRequested) {
         pendingTargetX = targetX;
         if (jumpRequested) pendingJumpRepeats = Math.max(pendingJumpRepeats, 2);
@@ -254,6 +288,9 @@ public class GameController implements Initializable {
         sendInputPacket(targetX, jumpRequested);
     }
 
+    /**
+     * Reenvía el último input del cliente para mitigar pérdida puntual de UDP.
+     */
     private void resendPendingInput(double dt) {
         if (pendingTargetX == null) return;
         inputResendTimer += dt;
@@ -265,6 +302,9 @@ public class GameController implements Initializable {
         sendInputPacket(pendingTargetX, jump);
     }
 
+    /**
+     * Mantiene vivo al cliente durante la partida aunque no esté moviéndose.
+     */
     private void sendHeartbeatIfDue(double dt) {
         heartbeatTimer += dt;
         if (heartbeatTimer < GameConfig.CLIENT_HEARTBEAT_SECONDS) return;
@@ -282,6 +322,9 @@ public class GameController implements Initializable {
         }
     }
 
+    /**
+     * Expira peers inactivos desde el host y publica un snapshot actualizado.
+     */
     private void expireInactivePeersIfNeeded() {
         List<String> expired = MainApp.sessionService.expireInactivePeers((long) (GameConfig.HOST_PEER_TIMEOUT_SECONDS * 1000));
         if (expired.isEmpty()) return;
@@ -295,6 +338,9 @@ public class GameController implements Initializable {
         MainApp.udpPeer.broadcast(snapshot, MainApp.sessionService.getRemotePeerAddresses());
     }
 
+    /**
+     * Serializa y envía un mensaje de input hacia el host.
+     */
     private void sendInputPacket(double targetX, boolean jumpRequested) {
         try {
             Map<String, Object> msg = serializer.build(
@@ -311,6 +357,9 @@ public class GameController implements Initializable {
         }
     }
 
+    /**
+     * Procesa varios datagramas por frame sin bloquear el render.
+     */
     private void pollIncomingMessages() {
         int limit = 20;
         while (limit-- > 0) {
@@ -320,6 +369,12 @@ public class GameController implements Initializable {
         }
     }
 
+    /**
+     * Interpreta los mensajes relevantes durante la partida.
+     *
+     * <p>El host acepta INPUT/HEARTBEAT/ACK; los clientes aceptan SNAPSHOT y
+     * GAME_OVER. Esta separación es parte del modelo autoritativo.</p>
+     */
     private void handleIncomingMessage(Map<String, Object> msg, InetSocketAddress sender) {
         Object type = msg.get("type");
         if (!(type instanceof String messageType)) return;

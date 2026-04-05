@@ -8,10 +8,18 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
+/**
+ * Observador que resume eventos importantes en un pequeño historial textual.
+ */
 public class EventLogObserver {
     private static final int MAX = 5;
     private final Deque<String> entries = new ArrayDeque<>();
 
+    /**
+     * Construye el observador y lo suscribe a los eventos relevantes de gameplay.
+     *
+     * @param eventBus bus global del juego
+     */
     public EventLogObserver(EventBus eventBus) {
         eventBus.subscribe(EventNames.BUTTON_STATE_CHANGED, e -> add(Boolean.TRUE.equals(e.get("pressed"))
             ? "Boton activado"
@@ -35,6 +43,11 @@ public class EventLogObserver {
         while (entries.size() > MAX) entries.removeLast();
     }
 
+    /**
+     * Retorna una copia del log reciente para mostrarlo en la interfaz.
+     *
+     * @return lista de textos visibles para el usuario
+     */
     public List<String> getEntries() {
         return new ArrayList<>(entries);
     }

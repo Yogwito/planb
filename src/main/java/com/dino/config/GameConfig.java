@@ -4,10 +4,21 @@ import javafx.scene.paint.Color;
 
 import java.util.Map;
 
+/**
+ * Configuración central del juego.
+ *
+ * <p>Reúne constantes de ventana, física, red, cámara, puntaje y elementos del
+ * nivel. Se usa para evitar números mágicos dispersos y facilitar el ajuste del
+ * balance sin tocar la lógica de las clases principales.</p>
+ */
 public final class GameConfig {
+    /** Ancho fijo de la ventana principal. */
     public static final int WINDOW_WIDTH = 1280;
+    /** Alto fijo de la ventana principal. */
     public static final int WINDOW_HEIGHT = 780;
+    /** Frecuencia objetivo de render. */
     public static final int FPS = 60;
+    /** Frecuencia con la que el host difunde snapshots UDP. */
     public static final int SNAPSHOT_RATE_HZ = 30;
 
     public static final int LEVEL_WIDTH = 1800;
@@ -82,6 +93,7 @@ public final class GameConfig {
     public static final double MIN_ZOOM = 0.92;
     public static final double MAX_ZOOM = 1.05;
 
+    /** Colores base disponibles para identificar a cada jugador. */
     public static final Map<String, Color> COLORS = Map.of(
         "red", Color.web("#ef476f"),
         "blue", Color.web("#4cc9f0"),
@@ -89,5 +101,8 @@ public final class GameConfig {
         "yellow", Color.web("#ffd166")
     );
 
+    /**
+     * Evita instanciación accidental; la clase actúa como contenedor estático.
+     */
     private GameConfig() {}
 }

@@ -1,5 +1,11 @@
 package com.dino.domain.entities;
 
+/**
+ * Zona de salida de la sala.
+ *
+ * <p>Cuando todos los jugadores conectados están dentro de esta región, el host
+ * avanza al siguiente nivel o finaliza la campaña.</p>
+ */
 public class ExitZone {
     private double x;
     private double y;

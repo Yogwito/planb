@@ -1,5 +1,11 @@
 package com.dino.domain.entities;
 
+/**
+ * Moneda o ítem coleccionable del nivel.
+ *
+ * <p>Entrega puntaje individual cuando un jugador la recoge y luego queda
+ * inactiva hasta el siguiente reinicio de sala.</p>
+ */
 public class CollectibleItem {
     private String id;
     private double x;

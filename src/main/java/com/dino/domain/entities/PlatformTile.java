@@ -1,5 +1,11 @@
 package com.dino.domain.entities;
 
+/**
+ * Plataforma estática rectangular del nivel.
+ *
+ * <p>Se usa para suelo, escalones y superficies de apoyo. Es inmutable a nivel
+ * conceptual, aunque se serializa como DTO simple para snapshots.</p>
+ */
 public class PlatformTile {
     private String id;
     private double x;

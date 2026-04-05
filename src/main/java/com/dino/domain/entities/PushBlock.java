@@ -1,5 +1,12 @@
 package com.dino.domain.entities;
 
+/**
+ * Bloque empujable del nivel.
+ *
+ * <p>Su función principal es cubrir el requisito de mover objetos dentro del
+ * juego. El host simula su movimiento y luego lo replica a los clientes por
+ * snapshot.</p>
+ */
 public class PushBlock {
     private String id;
     private double x;

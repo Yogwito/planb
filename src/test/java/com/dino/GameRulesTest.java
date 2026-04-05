@@ -11,9 +11,13 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Pruebas unitarias para reglas puras del dominio.
+ */
 class GameRulesTest {
 
     @Test
+    /** Verifica la detección básica de solapamiento con el botón. */
     void playerPressesButtonWhenOverlapping() {
         Player player = new Player("p1", "A", "red");
         player.setX(100);
@@ -25,6 +29,7 @@ class GameRulesTest {
     }
 
     @Test
+    /** La salida solo se valida si todos los conectados llegaron. */
     void allConnectedPlayersMustReachExit() {
         Player a = new Player("a", "A", "red");
         a.setConnected(true);
@@ -41,6 +46,7 @@ class GameRulesTest {
     }
 
     @Test
+    /** El hilo debe bloquear separaciones excesivas. */
     void threadDistanceBlocksExcessiveSeparation() {
         Player a = new Player("a", "A", "red");
         a.setX(0);
@@ -54,6 +60,7 @@ class GameRulesTest {
     }
 
     @Test
+    /** La zona de salida debe detectar a un jugador dentro del rectángulo. */
     void exitZoneDetectsPlayerInside() {
         Player player = new Player("p1", "A", "red");
         player.setX(200);

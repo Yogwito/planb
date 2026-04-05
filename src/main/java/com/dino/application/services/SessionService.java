@@ -12,6 +12,14 @@ import com.dino.domain.events.EventNames;
 import java.net.InetSocketAddress;
 import java.util.*;
 
+/**
+ * Estado compartido de la sesión actual.
+ *
+ * <p>Actúa como repositorio en memoria para lobby y partida. Guarda identidad
+ * local, lista de jugadores, geometría del nivel, objetos interactivos, puntaje
+ * y metadatos de red. El host produce snapshots desde este estado; el cliente lo
+ * reconstruye al recibir snapshots UDP.</p>
+ */
 public class SessionService {
     private final EventBus eventBus;
 
@@ -43,18 +51,41 @@ public class SessionService {
     private final List<CollectibleItem> coins = new ArrayList<>();
     private final Map<String, Long> peerLastSeenMillis = new LinkedHashMap<>();
 
+    /**
+     * Crea un contenedor de sesión asociado al bus de eventos global.
+     *
+     * @param eventBus bus usado para publicar recepción de snapshots
+     */
     public SessionService(EventBus eventBus) {
         this.eventBus = eventBus;
     }
 
+    /**
+     * Registra o reemplaza un jugador en el estado actual.
+     *
+     * @param player jugador a almacenar
+     */
     public synchronized void addPlayer(Player player) { players.put(player.getId(), player); }
 
+    /**
+     * Elimina un jugador y cualquier rastro de su red asociada.
+     *
+     * @param playerId identificador único del jugador
+     */
     public synchronized void removePlayer(String playerId) {
         players.remove(playerId);
         peerAddresses.remove(playerId);
         peerLastSeenMillis.remove(playerId);
     }
 
+    /**
+     * Aplica un snapshot autoritativo recibido por red.
+     *
+     * <p>Si el snapshot trae una secuencia menor o repetida, se ignora para
+     * evitar retrocesos visuales por paquetes UDP fuera de orden.</p>
+     *
+     * @param data snapshot ya deserializado
+     */
     @SuppressWarnings("unchecked")
     public synchronized void updateFromSnapshot(Map<String, Object> data) {
         if (data.containsKey("seq")) {
@@ -185,9 +216,19 @@ public class SessionService {
             }
         }
 
+        // La UI y los observadores reaccionan a este evento; por eso el
+        // SessionService no invoca controladores de forma directa.
         eventBus.publish(EventNames.SNAPSHOT_RECEIVED, data);
     }
 
+    /**
+     * Construye un snapshot completo del estado actual.
+     *
+     * <p>Lo usa el host para difundir el juego en vivo y también para enviar el
+     * snapshot inicial cuando arranca una partida o se sincroniza el lobby.</p>
+     *
+     * @return mapa serializable listo para enviarse por UDP
+     */
     public synchronized Map<String, Object> getSnapshotData() {
         Map<String, Object> snapshot = new HashMap<>();
         snapshot.put("seq", ++nextSnapshotSeq);
@@ -305,8 +346,14 @@ public class SessionService {
         return snapshot;
     }
 
+    /**
+     * Retorna la lista mutable de monedas del host.
+     */
     public List<CollectibleItem> getCoins() { return coins; }
 
+    /**
+     * Retorna una copia defensiva de las monedas para la UI.
+     */
     public synchronized List<CollectibleItem> getCoinsSnapshot() {
         List<CollectibleItem> snapshot = new ArrayList<>();
         for (CollectibleItem c : coins) {
@@ -317,6 +364,9 @@ public class SessionService {
         return snapshot;
     }
 
+    /**
+     * Limpia por completo el estado de la sesión actual.
+     */
     public synchronized void reset() {
         players.clear();
         peerAddresses.clear();
@@ -340,6 +390,9 @@ public class SessionService {
         peerLastSeenMillis.clear();
     }
 
+    /**
+     * Asocia un jugador remoto a una dirección UDP y actualiza su último pulso.
+     */
     public synchronized void registerPeerAddress(String playerId, InetSocketAddress address) {
         if (playerId != null && address != null) {
             peerAddresses.put(playerId, address);
@@ -347,6 +400,9 @@ public class SessionService {
         }
     }
 
+    /**
+     * Lista únicamente peers remotos, excluyendo a la instancia local.
+     */
     public synchronized List<InetSocketAddress> getRemotePeerAddresses() {
         List<InetSocketAddress> remotes = new ArrayList<>();
         for (Map.Entry<String, InetSocketAddress> entry : peerAddresses.entrySet()) {
@@ -355,11 +411,17 @@ public class SessionService {
         return remotes;
     }
 
+    /**
+     * Cambia el estado de listo de un jugador.
+     */
     public synchronized void markPlayerReady(String playerId, boolean ready) {
         Player player = players.get(playerId);
         if (player != null) player.setReady(ready);
     }
 
+    /**
+     * Cambia el estado de conexión de un jugador y sincroniza su timestamp.
+     */
     public synchronized void markPlayerConnected(String playerId, boolean connected) {
         Player player = players.get(playerId);
         if (player != null) player.setConnected(connected);
@@ -370,6 +432,9 @@ public class SessionService {
         }
     }
 
+    /**
+     * Elimina la dirección de red asociada a un peer.
+     */
     public synchronized void removePeerAddress(String playerId) {
         if (playerId != null) {
             peerAddresses.remove(playerId);
@@ -377,16 +442,30 @@ public class SessionService {
         }
     }
 
+    /**
+     * Registra que se recibió actividad reciente de un peer.
+     */
     public synchronized void markPeerSeen(String playerId) {
         if (playerId != null) peerLastSeenMillis.put(playerId, System.currentTimeMillis());
     }
 
+    /**
+     * Calcula la edad del último paquete observado de un peer.
+     *
+     * @return milisegundos desde el último mensaje o {@code null} si no hay dato
+     */
     public synchronized Long getPeerAgeMillis(String playerId) {
         Long lastSeen = peerLastSeenMillis.get(playerId);
         if (lastSeen == null) return null;
         return Math.max(0L, System.currentTimeMillis() - lastSeen);
     }
 
+    /**
+     * Marca como inactivos los peers que superan el timeout indicado.
+     *
+     * @param timeoutMillis tiempo máximo sin actividad
+     * @return lista de identificadores expirados
+     */
     public synchronized List<String> expireInactivePeers(long timeoutMillis) {
         long now = System.currentTimeMillis();
         List<String> expired = new ArrayList<>();
@@ -405,6 +484,9 @@ public class SessionService {
         return expired;
     }
 
+    /**
+     * Retorna una copia defensiva de los jugadores.
+     */
     public synchronized List<Player> getPlayersSnapshot() {
         List<Player> snapshot = new ArrayList<>();
         for (Player player : players.values()) {
@@ -431,6 +513,9 @@ public class SessionService {
         return snapshot;
     }
 
+    /**
+     * Retorna una copia defensiva de las plataformas del nivel.
+     */
     public synchronized List<PlatformTile> getPlatformsSnapshot() {
         List<PlatformTile> snapshot = new ArrayList<>();
         for (PlatformTile platform : platforms) {
@@ -439,12 +524,18 @@ public class SessionService {
         return snapshot;
     }
 
+    /**
+     * Retorna una copia de los puntos de aparición del nivel.
+     */
     public synchronized List<double[]> getSpawnPointsSnapshot() {
         List<double[]> snapshot = new ArrayList<>();
         for (double[] spawn : spawnPoints) snapshot.add(new double[]{spawn[0], spawn[1]});
         return snapshot;
     }
 
+    /**
+     * Retorna una copia defensiva del botón actual.
+     */
     public synchronized ButtonSwitch getButtonSwitchSnapshot() {
         if (buttonSwitch == null) return null;
         ButtonSwitch copy = new ButtonSwitch(buttonSwitch.getId(), buttonSwitch.getX(), buttonSwitch.getY(), buttonSwitch.getWidth(), buttonSwitch.getHeight());
@@ -452,6 +543,9 @@ public class SessionService {
         return copy;
     }
 
+    /**
+     * Retorna una copia defensiva de la puerta actual.
+     */
     public synchronized Door getDoorSnapshot() {
         if (door == null) return null;
         Door copy = new Door(door.getId(), door.getX(), door.getY(), door.getWidth(), door.getHeight());
@@ -459,11 +553,17 @@ public class SessionService {
         return copy;
     }
 
+    /**
+     * Retorna una copia defensiva de la salida actual.
+     */
     public synchronized ExitZone getExitZoneSnapshot() {
         if (exitZone == null) return null;
         return new ExitZone(exitZone.getX(), exitZone.getY(), exitZone.getWidth(), exitZone.getHeight());
     }
 
+    /**
+     * Retorna una copia defensiva de los bloques empujables.
+     */
     public synchronized List<PushBlock> getPushBlocksSnapshot() {
         List<PushBlock> snapshot = new ArrayList<>();
         for (PushBlock block : pushBlocks) {

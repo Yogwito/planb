@@ -8,12 +8,24 @@ import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.SourceDataLine;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Gestor de audio procedural del juego.
+ *
+ * <p>No depende de archivos externos. Escucha eventos del {@link EventBus} y
+ * genera tonos y acordes sencillos con Java Sound para maximizar portabilidad
+ * en distintos equipos de laboratorio.</p>
+ */
 public class SoundManager {
     private static final float SAMPLE_RATE = 44100f;
     private static final int MUSIC_CHUNK_MS = 180;
     private final AtomicBoolean musicRunning = new AtomicBoolean(false);
     private Thread musicThread;
 
+    /**
+     * Registra las suscripciones del sistema de audio a los eventos del juego.
+     *
+     * @param eventBus bus de eventos compartido
+     */
     public SoundManager(EventBus eventBus) {
         eventBus.subscribe(EventNames.GAME_STARTED, e -> {
             startBackgroundMusic();
@@ -188,6 +200,9 @@ public class SoundManager {
         }
     }
 
+    /**
+     * Libera el audio continuo al cerrar la aplicación o volver al menú.
+     */
     public void close() {
         stopBackgroundMusic();
     }

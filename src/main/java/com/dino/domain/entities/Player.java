@@ -2,6 +2,12 @@ package com.dino.domain.entities;
 
 import com.dino.config.GameConfig;
 
+/**
+ * Entidad principal del dominio para representar a un jugador en lobby y partida.
+ *
+ * <p>Es un objeto mutable y serializable por snapshot. Acumula estado de
+ * movimiento, puntaje, conexión y progreso dentro de la campaña.</p>
+ */
 public class Player {
     private String id;
     private String name;
@@ -21,8 +27,16 @@ public class Player {
     private boolean connected;
     private boolean ready;
 
+    /** Constructor vacío requerido para reconstrucción por snapshot. */
     public Player() {}
 
+    /**
+     * Crea un jugador listo para registrarse en la sesión.
+     *
+     * @param id identificador único
+     * @param name nombre visible
+     * @param color color asignado dentro del juego
+     */
     public Player(String id, String name, String color) {
         this.id = id;
         this.name = name;
@@ -33,18 +47,22 @@ public class Player {
         this.targetX = 0;
     }
 
+    /** @return ancho jugable del personaje según la configuración global */
     public double getWidth() {
         return GameConfig.PLAYER_WIDTH;
     }
 
+    /** @return alto jugable del personaje según la configuración global */
     public double getHeight() {
         return GameConfig.PLAYER_HEIGHT;
     }
 
+    /** @return coordenada X del centro del jugador */
     public double getCenterX() {
         return x + getWidth() / 2.0;
     }
 
+    /** @return coordenada Y del centro del jugador */
     public double getCenterY() {
         return y + getHeight() / 2.0;
     }
@@ -57,6 +75,11 @@ public class Player {
         this.score = score;
     }
 
+    /**
+     * Suma o resta puntaje sin permitir valores negativos.
+     *
+     * @param delta cambio de puntaje a aplicar
+     */
     public void addScore(int delta) {
         this.score = Math.max(0, this.score + delta);
     }

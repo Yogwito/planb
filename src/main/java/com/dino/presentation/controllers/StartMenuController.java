@@ -15,6 +15,13 @@ import javafx.scene.layout.HBox;
 import java.net.URL;
 import java.util.ResourceBundle;
 
+/**
+ * Controlador de la pantalla inicial.
+ *
+ * <p>Recoge el nombre del jugador y los parámetros básicos de red. Desde aquí
+ * la instancia local decide si actuará como host o como cliente y luego abre el
+ * lobby correspondiente.</p>
+ */
 public class StartMenuController implements Initializable {
     @FXML private TextField playerNameField;
     @FXML private RadioButton createRadio;
@@ -28,6 +35,10 @@ public class StartMenuController implements Initializable {
     @FXML private ChoiceBox<Integer> expectedPlayersChoice;
     @FXML private Label errorLabel;
 
+    /**
+     * Configura los controles iniciales y alterna campos según el modo
+     * seleccionado.
+     */
     @Override
     public void initialize(URL url, ResourceBundle rb) {
         expectedPlayersChoice.getItems().addAll(2, 3, 4);
@@ -44,6 +55,12 @@ public class StartMenuController implements Initializable {
         hostPortField.setDisable(true);
     }
 
+    /**
+     * Valida la información del formulario, crea la sesión y abre el lobby.
+     *
+     * <p>Si se elige "Crear sala", inicializa la instancia local como host. Si
+     * se elige "Unirse", envía un primer {@code JOIN} al host remoto.</p>
+     */
     @FXML
     public void onAbrirLobby() {
         errorLabel.setVisible(false);
@@ -84,6 +101,11 @@ public class StartMenuController implements Initializable {
         }
     }
 
+    /**
+     * Muestra un mensaje de error en la misma pantalla.
+     *
+     * @param msg texto visible para el usuario
+     */
     private void showError(String msg) {
         errorLabel.setText(msg);
         errorLabel.setVisible(true);

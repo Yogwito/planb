@@ -1,5 +1,11 @@
 package com.dino.domain.entities;
 
+/**
+ * Puerta del nivel controlada por el botón.
+ *
+ * <p>Mientras está cerrada participa en la colisión; cuando se abre deja de
+ * bloquear el paso de jugadores y bloques.</p>
+ */
 public class Door {
     private String id;
     private double x;

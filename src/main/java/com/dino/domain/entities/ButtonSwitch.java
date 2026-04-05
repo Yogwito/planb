@@ -1,5 +1,11 @@
 package com.dino.domain.entities;
 
+/**
+ * Botón del nivel.
+ *
+ * <p>Cuando al menos un jugador se superpone con él, el host lo marca como
+ * presionado y abre la puerta asociada.</p>
+ */
 public class ButtonSwitch {
     private String id;
     private double x;

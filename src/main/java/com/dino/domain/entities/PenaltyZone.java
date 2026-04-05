@@ -1,5 +1,11 @@
 package com.dino.domain.entities;
 
+/**
+ * Entidad residual del proyecto anterior.
+ *
+ * <p>Ya no forma parte del loop principal de {@code Threaded}, pero se conserva
+ * para no romper compatibilidad con etapas previas del repositorio.</p>
+ */
 public class PenaltyZone {
     private String id;
     private double x;

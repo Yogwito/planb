@@ -393,7 +393,9 @@ public class HostMatchService {
         switch (levelIndex) {
             case 0 -> loadLevelOne();
             case 1 -> loadLevelTwo();
-            default -> loadLevelThree();
+            case 2 -> loadLevelThree();
+            case 3 -> loadLevelFour();
+            default -> loadLevelFive();
         }
 
         if (resetScores) {
@@ -452,29 +454,59 @@ public class HostMatchService {
     }
 
     private void loadLevelThree() {
-        // Caos: small platforms (80-140px), 3 big gaps, button barely reachable (9px apex margin),
-        // exit is LOWER than door (requires descending at the end)
-        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   700, 140, 24));
-        // GAP1 200px (220→420)
-        sessionService.getPlatforms().add(new PlatformTile("stone_a",   420,  655,  90, 24)); // rises 45px
-        sessionService.getPlatforms().add(new PlatformTile("stone_b",   540,  720,  80, 24)); // drops 65px; 30px from stone_a
-        // GAP2 200px (620→820) — button isolated above
-        sessionService.getPlatforms().add(new PlatformTile("button_p",  820,  615, 100, 24)); // stone_b→button: apex_feet=606, plat=615 (9px margin)
-        // GAP3 180px (920→1100)
-        sessionService.getPlatforms().add(new PlatformTile("stone_c",   1100, 650,  90, 24)); // drops 35px from button
-        sessionService.getPlatforms().add(new PlatformTile("stone_d",   1220, 700,  80, 24)); // drops 50px; 30px from stone_c
-        sessionService.getPlatforms().add(new PlatformTile("door_p",    1330, 645, 120, 24)); // rises 55px; 30px from stone_d
-        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1480, 720, 130, 24)); // drops 75px — exit is LOWER than door
+        // Nivel 3 rebajado: plataformas mas anchas y saltos menos castigadores, pero sigue exigiendo coordinacion.
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   710, 200, 24));
+        sessionService.getPlatforms().add(new PlatformTile("stone_a",   360,  675, 150, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_p",  590,  635, 180, 24));
+        sessionService.getPlatforms().add(new PlatformTile("stone_b",   860,  610, 170, 24));
+        sessionService.getPlatforms().add(new PlatformTile("door_p",    1100, 580, 210, 24));
+        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1380, 555, 230, 24));
 
-        addDefaultSpawns(100, 648); // 700 - 52
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 830, 599, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT)); // button_p center; y=615-16
-        sessionService.setDoor(new Door("door", 1355, 497, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
-        sessionService.setExitZone(new ExitZone(1485, 610, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
-        sessionService.getCoins().add(new CollectibleItem("l3_c1", 457, 635, GameConfig.SCORE_COIN_SMALL));  // stone_a (y=655)
-        sessionService.getCoins().add(new CollectibleItem("l3_c2", 572, 700, GameConfig.SCORE_COIN_SMALL));  // stone_b (y=720)
-        sessionService.getCoins().add(new CollectibleItem("l3_c3", 1137, 630, GameConfig.SCORE_COIN_SMALL)); // stone_c (y=650)
-        sessionService.getCoins().add(new CollectibleItem("l3_c4", 1382, 625, GameConfig.SCORE_COIN_LARGE)); // door_p  (y=645), gold — hard to reach
-        sessionService.getCoins().add(new CollectibleItem("l3_c5", 1537, 700, GameConfig.SCORE_COIN_SMALL)); // exit_p  (y=720)
+        addDefaultSpawns(100, 658);
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 650, 619, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1180, 432, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1430, 445, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        sessionService.getCoins().add(new CollectibleItem("l3_c1", 420, 655, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l3_c2", 665, 615, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l3_c3", 930, 590, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l3_c4", 1190, 560, GameConfig.SCORE_COIN_LARGE));
+        sessionService.getCoins().add(new CollectibleItem("l3_c5", 1500, 535, GameConfig.SCORE_COIN_SMALL));
+    }
+
+    private void loadLevelFour() {
+        // Sala amplia para 4 jugadores: varias plataformas anchas donde pueden coincidir todos.
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   80,   720, 300, 24));
+        sessionService.getPlatforms().add(new PlatformTile("group_a",   450,  685, 340, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_p",  860,  645, 320, 24));
+        sessionService.getPlatforms().add(new PlatformTile("group_b",   1240, 610, 320, 24));
+        sessionService.getPlatforms().add(new PlatformTile("exit_p",    1600, 575, 180, 24));
+
+        addDefaultSpawns(120, 668);
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 980, 629, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1495, 462, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1630, 465, 150, GameConfig.EXIT_HEIGHT));
+        sessionService.getCoins().add(new CollectibleItem("l4_c1", 545, 665, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l4_c2", 1005, 625, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l4_c3", 1360, 590, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l4_c4", 1675, 555, GameConfig.SCORE_COIN_LARGE));
+    }
+
+    private void loadLevelFive() {
+        // Final: sigue siendo jugable en grupo, con dos grandes zonas donde los 4 caben al mismo tiempo.
+        sessionService.getPlatforms().add(new PlatformTile("spawn_p",   90,   720, 320, 24));
+        sessionService.getPlatforms().add(new PlatformTile("group_a",   500,  690, 360, 24));
+        sessionService.getPlatforms().add(new PlatformTile("bridge",    960,  650, 240, 24));
+        sessionService.getPlatforms().add(new PlatformTile("button_p",  1270, 615, 320, 24));
+        sessionService.getPlatforms().add(new PlatformTile("group_b",   1500, 575, 300, 24));
+
+        addDefaultSpawns(130, 668);
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 1390, 599, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1685, 427, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1545, 465, 220, GameConfig.EXIT_HEIGHT));
+        sessionService.getCoins().add(new CollectibleItem("l5_c1", 620, 670, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l5_c2", 1065, 630, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l5_c3", 1395, 595, GameConfig.SCORE_COIN_SMALL));
+        sessionService.getCoins().add(new CollectibleItem("l5_c4", 1605, 555, GameConfig.SCORE_COIN_LARGE));
     }
 
     private void addDefaultSpawns(double baseX, double baseY) {

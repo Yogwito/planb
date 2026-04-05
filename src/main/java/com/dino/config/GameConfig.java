@@ -37,7 +37,7 @@ public final class GameConfig {
     public static final double LOCAL_CLIENT_PREDICTION_SECONDS = 0.06;
     public static final double CAMERA_GROUP_INFLUENCE = 0.26;
     public static final double SNAPSHOT_STALE_WARNING_SECONDS = 0.28;
-    public static final int TOTAL_LEVELS = 3;
+    public static final int TOTAL_LEVELS = 5;
 
     public static final double BUTTON_WIDTH = 80.0;
     public static final double BUTTON_HEIGHT = 16.0;

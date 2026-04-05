@@ -53,6 +53,7 @@ public class MainApp extends Application {
 
     public static void resetRuntimeState() {
         shutdownNetworking();
+        if (soundManager != null) soundManager.close();
         eventBus           = new EventBus();
         sessionService     = new SessionService(eventBus);
         soundManager       = new SoundManager(eventBus);

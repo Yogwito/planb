@@ -94,7 +94,7 @@ class HostMatchServiceTest {
         sessionService.setGameRunning(true);
         hostMatchService.initWorld();
 
-        sessionService.setCurrentLevelIndex(2);
+        sessionService.setCurrentLevelIndex(4);
         sessionService.setExitZone(new com.dino.domain.entities.ExitZone(100, 700, 220, 120));
         host.setX(120);
         host.setY(720);

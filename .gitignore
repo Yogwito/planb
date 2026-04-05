@@ -1,0 +1,6 @@
+# Build artifacts
+target/
+
+# IntelliJ
+.idea/
+

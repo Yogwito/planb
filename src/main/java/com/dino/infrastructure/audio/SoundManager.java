@@ -23,6 +23,7 @@ public class SoundManager {
         eventBus.subscribe(EventNames.LEVEL_ADVANCED, e -> playCartoonChord(new int[]{440, 587, 740}, 240, 0.30, 0.16));
         eventBus.subscribe(EventNames.LEVEL_COMPLETED, e -> playCartoonChord(new int[]{523, 659, 784}, 320, 0.34, 0.18));
         eventBus.subscribe(EventNames.GAME_OVER, e -> playCartoonChord(new int[]{392, 330}, 420, 0.28, 0.08));
+        eventBus.subscribe(EventNames.COIN_COLLECTED, e -> playCartoonBlip(900, 1300, 75, 0.26));
     }
 
     private void playCartoonBlip(int startFrequency, int endFrequency, int durationMs, double volume) {
@@ -99,16 +100,15 @@ public class SoundManager {
             clip = (Clip) AudioSystem.getLine(info);
             clip.open(format, buffer, 0, buffer.length);
         } catch (Exception e) {
-            System.err.println("[Sound] " + e.getMessage());
+            System.err.println("[Sound] open: " + e.getMessage());
             return;
         }
         try {
             clip.start();
             Thread.sleep(durationMs + 50L);
-        } catch (Exception e) {
-            System.err.println("[Sound] " + e.getMessage());
-        } finally {
             clip.close();
+        } catch (Exception e) {
+            System.err.println("[Sound] play: " + e.getMessage());
         }
     }
 }

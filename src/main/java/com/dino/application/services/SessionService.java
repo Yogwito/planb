@@ -1,6 +1,7 @@
 package com.dino.application.services;
 
 import com.dino.domain.entities.ButtonSwitch;
+import com.dino.domain.entities.CollectibleItem;
 import com.dino.domain.entities.Door;
 import com.dino.domain.entities.ExitZone;
 import com.dino.domain.entities.PlatformTile;
@@ -36,6 +37,7 @@ public class SessionService {
     private double elapsedTime;
     private boolean gameRunning;
     private volatile long lastSnapshotSeq = -1;
+    private final List<CollectibleItem> coins = new ArrayList<>();
 
     public SessionService(EventBus eventBus) {
         this.eventBus = eventBus;
@@ -147,12 +149,26 @@ public class SessionService {
             exitZone = value;
         }
 
+        if (data.containsKey("coins")) {
+            coins.clear();
+            for (Map<String, Object> raw : (List<Map<String, Object>>) data.get("coins")) {
+                CollectibleItem c = new CollectibleItem(
+                    (String) raw.get("id"),
+                    ((Number) raw.get("x")).doubleValue(),
+                    ((Number) raw.get("y")).doubleValue(),
+                    ((Number) raw.get("points")).intValue()
+                );
+                c.setActive((Boolean) raw.getOrDefault("active", true));
+                coins.add(c);
+            }
+        }
+
         eventBus.publish(EventNames.SNAPSHOT_RECEIVED, data);
     }
 
     public synchronized Map<String, Object> getSnapshotData() {
         Map<String, Object> snapshot = new HashMap<>();
-        snapshot.put("seq", System.nanoTime() / 1_000_000);
+        snapshot.put("seq", (long)(getElapsedTime() * 1000));
         snapshot.put("elapsedTime", elapsedTime);
         snapshot.put("gameRunning", gameRunning);
         snapshot.put("roomResetCount", roomResetCount);
@@ -236,6 +252,30 @@ public class SessionService {
             snapshot.put("exitZone", raw);
         }
 
+        List<Map<String, Object>> coinList = new ArrayList<>();
+        for (CollectibleItem c : coins) {
+            Map<String, Object> raw = new HashMap<>();
+            raw.put("id", c.getId());
+            raw.put("x", c.getX());
+            raw.put("y", c.getY());
+            raw.put("points", c.getPoints());
+            raw.put("active", c.isActive());
+            coinList.add(raw);
+        }
+        snapshot.put("coins", coinList);
+
+        return snapshot;
+    }
+
+    public List<CollectibleItem> getCoins() { return coins; }
+
+    public synchronized List<CollectibleItem> getCoinsSnapshot() {
+        List<CollectibleItem> snapshot = new ArrayList<>();
+        for (CollectibleItem c : coins) {
+            CollectibleItem copy = new CollectibleItem(c.getId(), c.getX(), c.getY(), c.getPoints());
+            copy.setActive(c.isActive());
+            snapshot.add(copy);
+        }
         return snapshot;
     }
 
@@ -244,6 +284,7 @@ public class SessionService {
         peerAddresses.clear();
         platforms.clear();
         spawnPoints.clear();
+        coins.clear();
         buttonSwitch = null;
         door = null;
         exitZone = null;

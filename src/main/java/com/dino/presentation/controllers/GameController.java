@@ -3,6 +3,7 @@ package com.dino.presentation.controllers;
 import com.dino.MainApp;
 import com.dino.config.GameConfig;
 import com.dino.domain.entities.ButtonSwitch;
+import com.dino.domain.entities.CollectibleItem;
 import com.dino.domain.entities.Door;
 import com.dino.domain.entities.ExitZone;
 import com.dino.domain.entities.PlatformTile;
@@ -97,6 +98,16 @@ public class GameController implements Initializable {
             if (MainApp.sessionService.isHost()) broadcastGameOver();
             Platform.runLater(this::onGameOver);
         });
+        MainApp.eventBus.subscribe(EventNames.COIN_COLLECTED, e -> Platform.runLater(() -> {
+            double wx = ((Number) e.get("x")).doubleValue() + GameConfig.COIN_SIZE / 2;
+            double wy = ((Number) e.get("y")).doubleValue() + GameConfig.COIN_SIZE / 2;
+            int pts = ((Number) e.get("points")).intValue();
+            double sx = arenaCanvas.getWidth() / getViewportWorldWidth();
+            double sy = arenaCanvas.getHeight() / getViewportWorldHeight();
+            Color burst = pts >= GameConfig.SCORE_COIN_LARGE ? Color.web("#ffa500") : Color.web("#ffd166");
+            spawnBurst(worldToScreenX(wx, sx), worldToScreenY(wy, sy), burst, pts >= GameConfig.SCORE_COIN_LARGE ? 12 : 7);
+            showFeedback("+" + pts + " moneda!", pts >= GameConfig.SCORE_COIN_LARGE ? "#ffa500" : "#ffd166");
+        }));
 
         feedbackLabel.setVisible(false);
         installKeyboardHandlers();
@@ -131,6 +142,19 @@ public class GameController implements Initializable {
             if (scene.getRoot() != null) {
                 scene.getRoot().requestFocus();
             }
+            arenaCanvas.setOnMousePressed(e -> {
+                double sx = arenaCanvas.getWidth() / getViewportWorldWidth();
+                double sy = arenaCanvas.getHeight() / getViewportWorldHeight();
+                double worldX = e.getX() / sx + cameraX;
+                double worldY = e.getY() / sy + cameraY;
+                Player local = getLocalPlayerSnapshot();
+                boolean jump = local != null
+                    && (local.getCenterY() - worldY) > GameConfig.MOUSE_JUMP_VERTICAL_THRESHOLD;
+                pendingTargetX = worldX;
+                if (jump) pendingJumpRepeats = 3;
+                inputResendTimer = 0;
+                sendInputPacket(worldX, jump);
+            });
         });
     }
 
@@ -226,7 +250,8 @@ public class GameController implements Initializable {
     }
 
     private void pollIncomingMessages() {
-        while (true) {
+        int limit = 20;
+        while (limit-- > 0) {
             var received = MainApp.udpPeer.receive();
             if (received.isEmpty()) return;
             handleIncomingMessage(received.get().getKey(), received.get().getValue());
@@ -300,14 +325,15 @@ public class GameController implements Initializable {
             gc.fillText("SALIDA", x + 22, y + 26);
         }
 
-        double groundScreenY = worldToScreenY(800, scaleY);
-        double groundScreenX = worldToScreenX(0, scaleX);
-        double groundScreenW = GameConfig.LEVEL_WIDTH * scaleX;
-        gc.setFill(Color.web("#1a1a2e"));
-        gc.fillRect(groundScreenX, groundScreenY, groundScreenW, 100 * scaleY);
-        gc.setStroke(Color.web("#4a4a6a"));
+        int lvl = MainApp.sessionService.getCurrentLevelIndex();
+        String[] sueloColor = {"#1a1a2e", "#3d1500", "#050508"};
+        String[] bordeColor = {"#4a4a6a", "#7a3010", "#1a0030"};
+        double sueloY = worldToScreenY(800, arenaCanvas.getHeight() / getViewportWorldHeight());
+        gc.setFill(Color.web(sueloColor[Math.min(lvl, 2)]));
+        gc.fillRect(0, sueloY, arenaCanvas.getWidth(), arenaCanvas.getHeight() - sueloY);
+        gc.setStroke(Color.web(bordeColor[Math.min(lvl, 2)]));
         gc.setLineWidth(3);
-        gc.strokeLine(groundScreenX, groundScreenY, groundScreenX + groundScreenW, groundScreenY);
+        gc.strokeLine(0, sueloY, arenaCanvas.getWidth(), sueloY);
 
         for (PlatformTile platform : MainApp.sessionService.getPlatformsSnapshot()) {
             double x = worldToScreenX(platform.getX(), scaleX);
@@ -349,6 +375,32 @@ public class GameController implements Initializable {
             gc.fillRoundRect(x + 8, y + 10, Math.max(0, drawW - 16), Math.max(0, drawH - 20), 10, 10);
             gc.setFill(Color.web("#e9d5ff"));
             gc.fillOval(x + drawW - 18, y + drawH / 2.0 - 6, 8, 8);
+        }
+
+        long nowMs = System.currentTimeMillis();
+        for (CollectibleItem coin : MainApp.sessionService.getCoinsSnapshot()) {
+            if (!coin.isActive()) continue;
+            double cr = GameConfig.COIN_SIZE / 2 * scaleX;
+            double pulse = 1.0 + 0.12 * Math.sin(nowMs / 400.0 + coin.getX() * 0.01);
+            double pr = cr * pulse;
+            double cx = worldToScreenX(coin.getX() + GameConfig.COIN_SIZE / 2, scaleX);
+            double cy = worldToScreenY(coin.getY() + GameConfig.COIN_SIZE / 2, scaleY);
+            boolean large = coin.getPoints() >= GameConfig.SCORE_COIN_LARGE;
+            Color coinCol = large ? Color.web("#ffa500") : Color.web("#ffd166");
+            gc.setFill(coinCol.deriveColor(0, 1, 1, 0.22));
+            gc.fillOval(cx - pr * 1.6, cy - pr * 1.6, pr * 3.2, pr * 3.2);
+            gc.setFill(coinCol);
+            gc.fillOval(cx - pr, cy - pr, pr * 2, pr * 2);
+            gc.setFill(Color.web("#ffffff88"));
+            gc.fillOval(cx - pr * 0.55, cy - pr * 0.72, pr * 0.55, pr * 0.52);
+            gc.setStroke(large ? Color.web("#ff8c00") : Color.web("#f59e0b"));
+            gc.setLineWidth(1.5);
+            gc.strokeOval(cx - pr, cy - pr, pr * 2, pr * 2);
+            if (large) {
+                gc.setFill(Color.web("#7c2d00"));
+                gc.setFont(Font.font("Arial", FontWeight.BOLD, Math.max(7, 8 * currentZoom)));
+                gc.fillText("★", cx - pr * 0.38, cy + pr * 0.48);
+            }
         }
 
         List<Player> players = MainApp.sessionService.getPlayersSnapshot().stream()
@@ -479,14 +531,24 @@ public class GameController implements Initializable {
     }
 
     private void drawBackdrop(GraphicsContext gc, double width, double height) {
-        gc.setFill(Color.web("#0b1020"));
-        gc.fillRect(0, 0, width, height);
-        gc.setFill(Color.web("#11213a"));
-        gc.fillOval(-120, -80, 420, 260);
-        gc.setFill(Color.web("#152844"));
-        gc.fillOval(width - 320, -40, 380, 220);
-        gc.setFill(Color.web("#0f1b2d"));
-        gc.fillRect(0, height * 0.72, width, height * 0.28);
+        int lvl = MainApp.sessionService.getCurrentLevelIndex();
+        if (lvl == 0) {
+            gc.setFill(Color.web("#0b1020")); gc.fillRect(0, 0, width, height);
+            gc.setFill(Color.web("#11213a")); gc.fillOval(-120, -80, 420, 260);
+            gc.setFill(Color.web("#152844")); gc.fillOval(width-320, -40, 380, 220);
+            gc.setFill(Color.web("#0f1b2d")); gc.fillRect(0, height*0.72, width, height*0.28);
+        } else if (lvl == 1) {
+            gc.setFill(Color.web("#1a0800")); gc.fillRect(0, 0, width, height);
+            gc.setFill(Color.web("#3d1500")); gc.fillOval(-80, height*0.3, 340, 300);
+            gc.setFill(Color.web("#2a0e00")); gc.fillOval(width-280, -60, 360, 260);
+            gc.setFill(Color.web("#2d1000")); gc.fillRect(0, height*0.72, width, height*0.28);
+        } else {
+            gc.setFill(Color.web("#050508")); gc.fillRect(0, 0, width, height);
+            gc.setFill(Color.web("#1a003055")); gc.fillOval(-60, -60, 460, 320);
+            gc.setFill(Color.web("#00102a55")); gc.fillOval(width-400, height*0.2, 440, 340);
+            gc.setFill(Color.web("#0a1a0055")); gc.fillOval(width*0.3, height*0.4, 380, 280);
+            gc.setFill(Color.web("#050508")); gc.fillRect(0, height*0.72, width, height*0.28);
+        }
     }
 
     private void drawBackdropShapes(GraphicsContext gc, double width, double height, double scaleX, double scaleY) {

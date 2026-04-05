@@ -2,6 +2,7 @@ package com.dino.application.services;
 
 import com.dino.config.GameConfig;
 import com.dino.domain.entities.ButtonSwitch;
+import com.dino.domain.entities.CollectibleItem;
 import com.dino.domain.entities.Door;
 import com.dino.domain.entities.ExitZone;
 import com.dino.domain.entities.PlatformTile;
@@ -70,6 +71,7 @@ public class HostMatchService {
 
         updateButtonAndDoor(players);
         updateExitState(players);
+        updateCoins(players);
 
         for (Player player : players) {
             if (player.isConnected() && player.isAlive() && player.getY() > GameConfig.FALL_RESET_Y) {
@@ -386,6 +388,7 @@ public class HostMatchService {
         sessionService.setCurrentLevelIndex(levelIndex);
         sessionService.getPlatforms().clear();
         sessionService.getSpawnPoints().clear();
+        sessionService.getCoins().clear();
 
         switch (levelIndex) {
             case 0 -> loadLevelOne();
@@ -414,9 +417,14 @@ public class HostMatchService {
         sessionService.getPlatforms().add(new PlatformTile("exit_p",   1550, 560, 200, 24));
 
         addDefaultSpawns(100, 698); // 750 - 52
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 850, 658, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT)); // step_b center; y=674-16
-        sessionService.setDoor(new Door("door", 1370, 450, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));                     // door_p; y=598-148
-        sessionService.setExitZone(new ExitZone(1560, 450, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));                     // exit_p; y=560-110
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 850, 658, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1370, 450, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1560, 450, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        // coins: platform_y - 20  (16px coin + 4px gap above platform top)
+        sessionService.getCoins().add(new CollectibleItem("l1_c1", 622, 692, GameConfig.SCORE_COIN_SMALL));  // step_a
+        sessionService.getCoins().add(new CollectibleItem("l1_c2", 790, 654, GameConfig.SCORE_COIN_SMALL));  // step_b (left of button)
+        sessionService.getCoins().add(new CollectibleItem("l1_c3", 1147, 616, GameConfig.SCORE_COIN_SMALL)); // step_c
+        sessionService.getCoins().add(new CollectibleItem("l1_c4", 1602, 540, GameConfig.SCORE_COIN_LARGE)); // exit_p, gold
     }
 
     private void loadLevelTwo() {
@@ -434,9 +442,13 @@ public class HostMatchService {
         sessionService.getPlatforms().add(new PlatformTile("exit_p",    1650, 600, 130, 24)); // rises 40px; 30px from door_p
 
         addDefaultSpawns(100, 668); // 720 - 52
-        sessionService.setButtonSwitch(new ButtonSwitch("button", 1225, 564, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT)); // button_p center; y=580-16
-        sessionService.setDoor(new Door("door", 1490, 492, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));                       // door_p; y=640-148
-        sessionService.setExitZone(new ExitZone(1655, 490, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));                       // exit_p; y=600-110
+        sessionService.setButtonSwitch(new ButtonSwitch("button", 1225, 564, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT));
+        sessionService.setDoor(new Door("door", 1490, 492, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1655, 490, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        sessionService.getCoins().add(new CollectibleItem("l2_c1", 572, 740, GameConfig.SCORE_COIN_SMALL));  // drop_a (y=760)
+        sessionService.getCoins().add(new CollectibleItem("l2_c2", 762, 680, GameConfig.SCORE_COIN_SMALL));  // rise_b (y=700)
+        sessionService.getCoins().add(new CollectibleItem("l2_c3", 1102, 625, GameConfig.SCORE_COIN_SMALL)); // mid_c  (y=645)
+        sessionService.getCoins().add(new CollectibleItem("l2_c4", 1688, 580, GameConfig.SCORE_COIN_LARGE)); // exit_p (y=600), gold
     }
 
     private void loadLevelThree() {
@@ -456,8 +468,13 @@ public class HostMatchService {
 
         addDefaultSpawns(100, 648); // 700 - 52
         sessionService.setButtonSwitch(new ButtonSwitch("button", 830, 599, GameConfig.BUTTON_WIDTH, GameConfig.BUTTON_HEIGHT)); // button_p center; y=615-16
-        sessionService.setDoor(new Door("door", 1355, 497, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));     // door_p; y=645-148
-        sessionService.setExitZone(new ExitZone(1485, 610, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));     // exit_p; y=720-110
+        sessionService.setDoor(new Door("door", 1355, 497, GameConfig.DOOR_WIDTH, GameConfig.DOOR_HEIGHT));
+        sessionService.setExitZone(new ExitZone(1485, 610, GameConfig.EXIT_WIDTH, GameConfig.EXIT_HEIGHT));
+        sessionService.getCoins().add(new CollectibleItem("l3_c1", 457, 635, GameConfig.SCORE_COIN_SMALL));  // stone_a (y=655)
+        sessionService.getCoins().add(new CollectibleItem("l3_c2", 572, 700, GameConfig.SCORE_COIN_SMALL));  // stone_b (y=720)
+        sessionService.getCoins().add(new CollectibleItem("l3_c3", 1137, 630, GameConfig.SCORE_COIN_SMALL)); // stone_c (y=650)
+        sessionService.getCoins().add(new CollectibleItem("l3_c4", 1382, 625, GameConfig.SCORE_COIN_LARGE)); // door_p  (y=645), gold — hard to reach
+        sessionService.getCoins().add(new CollectibleItem("l3_c5", 1537, 700, GameConfig.SCORE_COIN_SMALL)); // exit_p  (y=720)
     }
 
     private void addDefaultSpawns(double baseX, double baseY) {
@@ -487,7 +504,30 @@ public class HostMatchService {
         }
         if (sessionService.getButtonSwitch() != null) sessionService.getButtonSwitch().setPressed(false);
         if (sessionService.getDoor() != null) sessionService.getDoor().setOpen(false);
+        for (CollectibleItem coin : sessionService.getCoins()) coin.setActive(true);
         nextFinishOrder = 1;
+    }
+
+    private void updateCoins(List<Player> players) {
+        for (CollectibleItem coin : sessionService.getCoins()) {
+            if (!coin.isActive()) continue;
+            for (Player player : players) {
+                if (!player.isConnected() || !player.isAlive()) continue;
+                if (GameRules.intersects(player.getX(), player.getY(), player.getWidth(), player.getHeight(),
+                        coin.getX(), coin.getY(), GameConfig.COIN_SIZE, GameConfig.COIN_SIZE)) {
+                    coin.setActive(false);
+                    awardScore(player, coin.getPoints(), "recogió moneda");
+                    eventBus.publish(EventNames.COIN_COLLECTED, Map.of(
+                        "playerId", player.getId(),
+                        "coinId", coin.getId(),
+                        "points", coin.getPoints(),
+                        "x", coin.getX(),
+                        "y", coin.getY()
+                    ));
+                    break;
+                }
+            }
+        }
     }
 
     private void awardScore(Player player, int delta, String reason) {

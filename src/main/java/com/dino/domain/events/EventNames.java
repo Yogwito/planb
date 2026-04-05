@@ -17,4 +17,5 @@ public interface EventNames {
     String LEVEL_COMPLETED = "LEVEL_COMPLETED";
     String GAME_OVER = "GAME_OVER";
     String PLAYER_DISCONNECTED = "PLAYER_DISCONNECTED";
+    String COIN_COLLECTED = "COIN_COLLECTED";
 }
